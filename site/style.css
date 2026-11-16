@@ -1,8 +1,8 @@
 :root {
-  --bg-main: #0c0814;
-  --bg-card: rgba(22, 16, 38, 0.75);
-  --bg-card-hover: rgba(30, 22, 52, 0.9);
-  --border-color: rgba(168, 85, 247, 0.2);
+  --bg-main: #06030a;
+  --bg-card: rgba(14, 9, 24, 0.85);
+  --bg-card-hover: rgba(22, 14, 38, 0.95);
+  --border-color: rgba(168, 85, 247, 0.18);
   --border-hover: rgba(192, 132, 252, 0.5);
   --text-main: #f1f5f9;
   --text-muted: #94a3b8;
@@ -156,6 +156,30 @@ a {
 
 .nav-links a:hover {
   color: #ffffff;
+}
+
+.github-nav-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #e2e8f0 !important;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  transition: var(--transition);
+}
+
+.github-nav-btn:hover {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: #ffffff;
+  color: #ffffff !important;
+}
+
+.nav-icon {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
 }
 
 .tg-nav-btn {
@@ -334,6 +358,20 @@ a {
   background: rgba(34, 158, 217, 0.25);
   border-color: #38bdf8;
   transform: translateY(-2px);
+}
+
+.btn-github {
+  background: rgba(255, 255, 255, 0.05);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  backdrop-filter: blur(10px);
+}
+
+.btn-github:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: #ffffff;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(255, 255, 255, 0.12);
 }
 
 .btn-sm {
