@@ -410,71 +410,20 @@ a {
 .preview-board-mock {
   width: 100%;
   aspect-ratio: 1 / 1;
-  background: #2b2638;
+  background: transparent;
   border-radius: 12px;
   position: relative;
   overflow: hidden;
-  box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.5);
-  border: 2px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.6);
+  border: 2px solid rgba(255, 255, 255, 0.1);
 }
 
-.mock-grid {
+.preview-board-img {
   width: 100%;
   height: 100%;
-  background-image: 
-    linear-gradient(45deg, #37304a 25%, transparent 25%), 
-    linear-gradient(-45deg, #37304a 25%, transparent 25%), 
-    linear-gradient(45deg, transparent 75%, #37304a 75%), 
-    linear-gradient(-45deg, transparent 75%, #37304a 75%);
-  background-size: 25% 25%;
-  background-position: 0 0, 0 12.5%, 12.5% -12.5%, -12.5% 0px;
-  opacity: 0.6;
-}
-
-.mock-arrow {
-  position: absolute;
-  height: 6px;
-  border-radius: 3px;
-  transform-origin: left center;
-}
-
-.mock-arrow-best {
-  width: 110px;
-  background: #111111;
-  border: 1px solid #ffffff;
-  top: 62%;
-  left: 38%;
-  transform: rotate(-90deg);
-  box-shadow: 0 0 10px rgba(0, 0, 0, 0.8);
-}
-
-.mock-arrow-best::after {
-  content: '';
-  position: absolute;
-  right: -8px;
-  top: -4px;
-  border-left: 10px solid #111111;
-  border-top: 7px solid transparent;
-  border-bottom: 7px solid transparent;
-}
-
-.mock-arrow-premove {
-  width: 90px;
-  background: #22c55e;
-  top: 38%;
-  left: 62%;
-  transform: rotate(-135deg);
-  box-shadow: 0 0 10px rgba(34, 197, 94, 0.6);
-}
-
-.mock-arrow-premove::after {
-  content: '';
-  position: absolute;
-  right: -8px;
-  top: -4px;
-  border-left: 10px solid #22c55e;
-  border-top: 7px solid transparent;
-  border-bottom: 7px solid transparent;
+  display: block;
+  object-fit: cover;
+  border-radius: 10px;
 }
 
 .preview-widget-mock {
