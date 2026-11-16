@@ -18,6 +18,141 @@ let lastBoardFlipped = null;
 let hasOverlayDrawings = false;
 let lastRenderedState = null;
 
+// Язык интерфейса (RU / EN)
+let currentLang = localStorage.getItem("chess_lang") || (navigator.language && navigator.language.startsWith("ru") ? "ru" : "en");
+
+const TRANSLATIONS = {
+  ru: {
+    title: "Stockfish 19",
+    titlePhone: "Stockfish 19 Lite WASM",
+    settingsTitle: "⚙️ Настройки",
+    langLabel: "🌐 Язык интерфейса / Language:",
+    arrowModeLabel: "🏹 Режим стрелок:",
+    arrowMode3: "3 стрелки (чёрная / серая / белая)",
+    arrowMode5: "5 чёрных стрелок с бейджами (MultiPV 5)",
+    markerStyleLabel: "🎯 Стиль меток на клетках:",
+    markerSquare: "⏹️ Квадрат",
+    markerCircle: "⏺️ Круг",
+    markerNone: "🏹 Только стрелка",
+    evalLabel: "📊 Оценка:",
+    equalPos: "⚖️ Равная позиция",
+    almostEqualPos: "⚖️ Примерно равная позиция",
+    advantageWhite: "Преимущество белых",
+    advantageBlack: "Преимущество чёрных",
+    inYourFavor: "(в твою пользу! 🎉)",
+    opponentAdvantage: "(в пользу соперника ⚠️)",
+    bulletName: "⚡ Пуля (150мс)",
+    blitzName: "🎯 Блиц (~0.5с)",
+    rapidName: "🧠 Рапид",
+    ultraName: "👑 Ультра (7с • 26х)",
+    bulletNamePhone: "⚡ Пуля (50мс)",
+    blitzNamePhone: "🎯 Блиц (100мс)",
+    rapidNamePhone: "🧠 Рапид (150мс)",
+    autoHintsLabel: "🏹 Стрелки после каждого хода ✨",
+    myTurnOnlyLabel: "🎯 Стрелки только для моего хода ♟️",
+    refreshBtn: "🔄 Обновить",
+    disableBtn: "⏸️ Отключить",
+    enableBtn: "▶️ Включить",
+    readyMsg: "🚀 Готов к игре! Сделай ход или нажми кнопку 🎮✨",
+    boardNotFound: "❌ Доска не найдена. Открой партию!",
+    boardNotFoundWarn: "⚠️ Шахматная доска не найдена!",
+    oppTurnWait: "⏳ Ход соперника... Ожидаем ответ ☕",
+    oppTurnPremove: "⏳ Ход соперника... Считаю премув (до 2с) 🟢💭",
+    premoveLabel: "🟢 Премув:",
+    premoveOnOpp: "на",
+    noMovesMsg: "⚠️ Ходы не найдены или партия завершена.",
+    refreshingMsg: "🔄 Обновление позиции и пересчёт...",
+    hintsDisabledMsg: "⏸️ Подсказки отключены (стрелки стёрты).",
+    hintsEnabledMsg: "▶️ Подсказки включены!",
+    switchedTo: "🔄 Переключено на",
+    searchingTurn: "ищет ход",
+    ultraThinking: "👑 Ультра-режим: глубокий расчёт до 26 ходов",
+    whiteGen: "белых",
+    blackGen: "чёрных",
+    label1st: "⬛ 1-й",
+    label2nd: "◻️ 2-й",
+    label3rd: "▫️ 3-й",
+    bestMovePhone: "⭐ Лучший ход:"
+  },
+  en: {
+    title: "Stockfish 19",
+    titlePhone: "Stockfish 19 Lite WASM",
+    settingsTitle: "⚙️ Settings",
+    langLabel: "🌐 Language / Язык интерфейса:",
+    arrowModeLabel: "🏹 Arrow mode:",
+    arrowMode3: "3 arrows (black / gray / white)",
+    arrowMode5: "5 black arrows with badges (MultiPV 5)",
+    markerStyleLabel: "🎯 Square marker style:",
+    markerSquare: "⏹️ Square",
+    markerCircle: "⏺️ Circle",
+    markerNone: "🏹 Arrow only",
+    evalLabel: "📊 Eval:",
+    equalPos: "⚖️ Equal position",
+    almostEqualPos: "⚖️ Roughly equal position",
+    advantageWhite: "White is winning",
+    advantageBlack: "Black is winning",
+    inYourFavor: "(in your favor! 🎉)",
+    opponentAdvantage: "(opponent advantage ⚠️)",
+    bulletName: "⚡ Bullet (150ms)",
+    blitzName: "🎯 Blitz (~0.5s)",
+    rapidName: "🧠 Rapid",
+    ultraName: "👑 Ultra (7s • 26d)",
+    bulletNamePhone: "⚡ Bullet (50ms)",
+    blitzNamePhone: "🎯 Blitz (100ms)",
+    rapidNamePhone: "🧠 Rapid (150ms)",
+    autoHintsLabel: "🏹 Arrows after each move ✨",
+    myTurnOnlyLabel: "🎯 Arrows only for my turn ♟️",
+    refreshBtn: "🔄 Refresh",
+    disableBtn: "⏸️ Disable",
+    enableBtn: "▶️ Enable",
+    readyMsg: "🚀 Ready to play! Make a move or click a button 🎮✨",
+    boardNotFound: "❌ Chessboard not found. Open a game!",
+    boardNotFoundWarn: "⚠️ Chessboard not found!",
+    oppTurnWait: "⏳ Opponent's turn... Waiting for move ☕",
+    oppTurnPremove: "⏳ Opponent's turn... Calculating premove (up to 2s) 🟢💭",
+    premoveLabel: "🟢 Premove:",
+    premoveOnOpp: "against",
+    noMovesMsg: "⚠️ No moves found or game over.",
+    refreshingMsg: "🔄 Refreshing position and recalculating...",
+    hintsDisabledMsg: "⏸️ Hints disabled (arrows cleared).",
+    hintsEnabledMsg: "▶️ Hints enabled!",
+    switchedTo: "🔄 Switched to",
+    searchingTurn: "calculating move for",
+    ultraThinking: "👑 Ultra mode: deep search up to 26 moves",
+    whiteGen: "White",
+    blackGen: "Black",
+    label1st: "⬛ 1st",
+    label2nd: "◻️ 2nd",
+    label3rd: "▫️ 3rd",
+    bestMovePhone: "⭐ Best move:"
+  }
+};
+
+function t(key) {
+  const dict = TRANSLATIONS[currentLang] || TRANSLATIONS.en;
+  return dict[key] || TRANSLATIONS.ru[key] || key;
+}
+
+function setLanguage(lang) {
+  if (lang !== "ru" && lang !== "en") return;
+  currentLang = lang;
+  localStorage.setItem("chess_lang", currentLang);
+
+  const widget = document.getElementById("chess-assistant-widget");
+  const wasSettingsOpen = document.getElementById("chess-settings-panel")?.style.display !== "none";
+  if (widget) {
+    widget.remove();
+    createWidget();
+    if (wasSettingsOpen) {
+      const panel = document.getElementById("chess-settings-panel");
+      if (panel) panel.style.display = "block";
+    }
+    if (lastRenderedState) {
+      drawAllVisuals(lastRenderedState);
+    }
+  }
+}
+
 // Настройки режимов (сохраняются в localStorage)
 let arrowMode = localStorage.getItem("chess_arrow_mode") || "multi3"; // "multi3" | "multi5"
 let markerShape = localStorage.getItem("chess_marker_shape") || "square"; // "square" | "circle" | "none"
@@ -541,7 +676,7 @@ function setPlatform(platform) {
 
   const out = document.getElementById("chess-assistant-output");
   if (out) {
-    out.innerText = `🔄 Переключено на ${Adapters[currentPlatform].name}. Поиск доски...`;
+    out.innerText = `${t("switchedTo")} ${Adapters[currentPlatform].name}...`;
   }
 }
 
@@ -592,19 +727,19 @@ function removeOldSideEvalBar() {
 }
 
 function getAdvantageText(score, activeTurn, isFlipped) {
-  if (!score) return "⚖️ Равная позиция";
+  if (!score) return t("equalPos");
   let cp = score.type === "mate" ? (score.value > 0 ? 10000 : -10000) : score.value;
   const whiteCp = activeTurn === "w" ? cp : -cp;
   const myColor = isFlipped ? "b" : "w";
 
   if (Math.abs(whiteCp) <= 25) {
-    return "⚖️ Примерно равная позиция";
+    return t("almostEqualPos");
   }
 
-  const leaderColor = whiteCp > 0 ? "белых" : "чёрных";
+  const leaderColor = whiteCp > 0 ? t("advantageWhite") : t("advantageBlack");
   const isMine = (myColor === "w" && whiteCp > 0) || (myColor === "b" && whiteCp < 0);
-  const who = isMine ? "(в твою пользу! 🎉)" : "(в пользу соперника ⚠️)";
-  return `Преимущество ${leaderColor} ${who}`;
+  const who = isMine ? t("inYourFavor") : t("opponentAdvantage");
+  return `${leaderColor} ${who}`;
 }
 
 function updateEvalBar(score, activeTurn) {
@@ -1119,7 +1254,7 @@ async function requestBestMoves() {
   const output = document.getElementById("chess-assistant-output");
 
   if (!board) {
-    if (output) output.innerText = "❌ Доска не найдена. Открой партию!";
+    if (output) output.innerText = t("boardNotFound");
     return;
   }
 
@@ -1139,7 +1274,7 @@ async function requestBestMoves() {
 
   if (isOnlyMyTurnEnabled && isOpponentTurn) {
     clearOverlay();
-    if (output) output.innerText = "⏳ Ход соперника... Считаю премув (до 2с) 🟢💭";
+    if (output) output.innerText = t("oppTurnPremove");
     const res = await requestMovesFromBackground(fen, { movetime: 2000, depth: 16, multiPV: 1 });
 
     // Проверяем: если противник УЖЕ походил, пока мы считали премув —
@@ -1165,12 +1300,12 @@ async function requestBestMoves() {
   }
 
   const cfg = SPEED_MODES[speedMode] || SPEED_MODES.bullet;
-  const turnName = activeTurn === "w" ? "белых" : "чёрных";
+  const turnName = activeTurn === "w" ? t("whiteGen") : t("blackGen");
   if (output) {
     if (speedMode === "ultra") {
-      output.innerText = `👑 Ультра-режим: глубокий расчёт до 26 ходов (${turnName}, ~7 сек)... 🧠⏳`;
+      output.innerText = `${t("ultraThinking")} (${turnName}, ~7s)... 🧠⏳`;
     } else {
-      output.innerText = `🔮 ${cfg.name} ищет ход (${turnName})... ⚡💭`;
+      output.innerText = `🔮 ${cfg.name} ${t("searchingTurn")} (${turnName})... ⚡💭`;
     }
   }
 
@@ -1188,7 +1323,7 @@ function formatMovesLog(moves, activeTurn, isFlipped) {
     const cp = score.type === "mate" ? (score.value > 0 ? 10000 : -10000) : score.value;
     const whiteCp = activeTurn === "w" ? cp : -cp;
     const isMine = (myColor === "w" && whiteCp > 0) || (myColor === "b" && whiteCp < 0);
-    return isMine ? "в твою пользу" : "в пользу соперника";
+    return isMine ? t("inYourFavor") : t("opponentAdvantage");
   };
 
   if (arrowMode === "multi5") {
@@ -1199,7 +1334,7 @@ function formatMovesLog(moves, activeTurn, isFlipped) {
     }).join("\n");
   }
 
-  const labels = ["⬛ 1-й", "◻️ 2-й", "▫️ 3-й"];
+  const labels = [t("label1st"), t("label2nd"), t("label3rd")];
   return moves.slice(0, 3).map((m, i) => {
     const s = formatScore(m.score, "M");
     const scorePart = s ? ` [${s} • ${who(m.score)}]` : "";
@@ -1247,18 +1382,18 @@ function onAnalysisReceived(res, fen, isOpponentTurn) {
       if (output) {
         const pm = res.ponderMove;
         const opp = res.bestMove;
-        const oppNote = opp ? ` (на ${opp.slice(0, 2).toUpperCase()}➔${opp.slice(2, 4).toUpperCase()})` : "";
-        output.innerText = `🟢 Премув: ${pm.slice(0, 2).toUpperCase()} ➔ ${pm.slice(2, 4).toUpperCase()}${oppNote}`;
+        const oppNote = opp ? ` (${t("premoveOnOpp")} ${opp.slice(0, 2).toUpperCase()}➔${opp.slice(2, 4).toUpperCase()})` : "";
+        output.innerText = `${t("premoveLabel")} ${pm.slice(0, 2).toUpperCase()} ➔ ${pm.slice(2, 4).toUpperCase()}${oppNote}`;
       }
     } else {
       clearOverlay();
-      if (output) output.innerText = "⏳ Ход соперника... Ожидаем ответ ☕";
+      if (output) output.innerText = t("oppTurnWait");
     }
     return;
   }
 
   if (moves.length === 0) {
-    if (output) output.innerText = "⚠️ Ходы не найдены или партия завершена.";
+    if (output) output.innerText = t("noMovesMsg");
     clearOverlay();
     return;
   }
@@ -1273,7 +1408,7 @@ function onAnalysisReceived(res, fen, isOpponentTurn) {
     let text = formatMovesLog(moves, activeTurn, isFlipped);
     if (isOpponentTurn && res.ponderMove) {
       const pm = res.ponderMove;
-      text += `\n🟢 Премув: ${pm.slice(0, 2).toUpperCase()} ➔ ${pm.slice(2, 4).toUpperCase()}`;
+      text += `\n${t("premoveLabel")} ${pm.slice(0, 2).toUpperCase()} ➔ ${pm.slice(2, 4).toUpperCase()}`;
     }
     output.innerText = text;
   }
@@ -1388,21 +1523,32 @@ function createWidget() {
       <!-- Панель настроек (скрыта по умолчанию, открывается по кнопке ⚙️) -->
       <div id="chess-settings-panel" class="widget-settings-panel" style="display: none;">
         <div class="settings-panel-header">
-          <span>⚙️ Настройки</span>
-          <button id="btn-close-settings" class="btn-panel-close" title="Закрыть настройки">✕</button>
+          <span>${t("settingsTitle")}</span>
+          <button id="btn-close-settings" class="btn-panel-close" title="✕">✕</button>
+        </div>
+
+        <!-- 0. Выбор языка (Language: RU / EN) -->
+        <div class="setting-item" style="margin-bottom: 6px;">
+          <div class="setting-label-row">
+            <span>${t("langLabel")}</span>
+          </div>
+          <div class="style-buttons-row">
+            <button type="button" class="btn-style-pill ${currentLang === 'ru' ? 'active' : ''}" data-lang="ru">🇷🇺 Русский</button>
+            <button type="button" class="btn-style-pill ${currentLang === 'en' ? 'active' : ''}" data-lang="en">🇬🇧 English</button>
+          </div>
         </div>
 
         <!-- 1. Режим стрелок (MultiPV 3 / MultiPV 5) -->
         <div class="setting-item">
           <div class="setting-label-row">
-            <span>🏹 Режим стрелок:</span>
+            <span>${t("arrowModeLabel")}</span>
           </div>
           <div class="arrow-mode-column">
             <button type="button" class="btn-style-pill arrow-mode-btn ${arrowMode === 'multi3' ? 'active' : ''}" data-arrow-mode="multi3">
-              3 стрелки (чёрная / серая / белая)
+              ${t("arrowMode3")}
             </button>
             <button type="button" class="btn-style-pill arrow-mode-btn ${arrowMode === 'multi5' ? 'active' : ''}" data-arrow-mode="multi5">
-              5 чёрных стрелок с бейджами (MultiPV 5)
+              ${t("arrowMode5")}
             </button>
           </div>
         </div>
@@ -1410,12 +1556,12 @@ function createWidget() {
         <!-- 2. Форма меток клеток (квадрат / круг / только стрелка) -->
         <div class="setting-item" style="margin-top: 6px;">
           <div class="setting-label-row">
-            <span>🎯 Стиль меток на клетках:</span>
+            <span>${t("markerStyleLabel")}</span>
           </div>
           <div class="style-buttons-row">
-            <button type="button" class="btn-style-pill ${markerShape === 'square' ? 'active' : ''}" data-marker="square">⏹️ Квадрат</button>
-            <button type="button" class="btn-style-pill ${markerShape === 'circle' ? 'active' : ''}" data-marker="circle">⏺️ Круг</button>
-            <button type="button" class="btn-style-pill ${markerShape === 'none' ? 'active' : ''}" data-marker="none">🏹 Только стрелка</button>
+            <button type="button" class="btn-style-pill ${markerShape === 'square' ? 'active' : ''}" data-marker="square">${t("markerSquare")}</button>
+            <button type="button" class="btn-style-pill ${markerShape === 'circle' ? 'active' : ''}" data-marker="circle">${t("markerCircle")}</button>
+            <button type="button" class="btn-style-pill ${markerShape === 'none' ? 'active' : ''}" data-marker="none">${t("markerNone")}</button>
           </div>
         </div>
       </div>
@@ -1423,47 +1569,47 @@ function createWidget() {
       <!-- Мини-полоска преимущества внутри виджета -->
       <div class="widget-eval-row">
         <div class="widget-eval-bar-line">
-          <span class="widget-eval-title">📊 Оценка:</span>
+          <span class="widget-eval-title">${t("evalLabel")}</span>
           <div class="widget-eval-track">
             <div class="widget-eval-fill"></div>
           </div>
           <span class="widget-eval-score">0.0</span>
         </div>
-        <div class="widget-eval-desc">⚖️ Равная позиция</div>
+        <div class="widget-eval-desc">${t("equalPos")}</div>
       </div>
 
       <!-- Переключатель режима скорости (Пуля 150мс / Блиц / Рапид / Ультра 7с) -->
       <div class="speed-modes-container">
         <div class="speed-modes-grid">
-          <button type="button" class="btn-speed-pill ${speedMode === 'bullet' ? 'active' : ''}" data-speed="bullet" title="Супер-быстро для пули (лимит 150 мс)">⚡ Пуля (150мс)</button>
-          <button type="button" class="btn-speed-pill ${speedMode === 'blitz' ? 'active' : ''}" data-speed="blitz" title="Быстро для блица (~0.5 сек)">🎯 Блиц (~0.5с)</button>
-          <button type="button" class="btn-speed-pill ${speedMode === 'rapid' ? 'active' : ''}" data-speed="rapid" title="Глубокий анализ для рапида (глубина 14)">🧠 Рапид</button>
-          <button type="button" class="btn-speed-pill ${speedMode === 'ultra' ? 'active' : ''}" data-speed="ultra" title="Максимальный просчёт Stockfish 19: 7 секунд на ход, глубина до 26 ходов!">👑 Ультра (7с • 26х)</button>
+          <button type="button" class="btn-speed-pill ${speedMode === 'bullet' ? 'active' : ''}" data-speed="bullet">${t("bulletName")}</button>
+          <button type="button" class="btn-speed-pill ${speedMode === 'blitz' ? 'active' : ''}" data-speed="blitz">${t("blitzName")}</button>
+          <button type="button" class="btn-speed-pill ${speedMode === 'rapid' ? 'active' : ''}" data-speed="rapid">${t("rapidName")}</button>
+          <button type="button" class="btn-speed-pill ${speedMode === 'ultra' ? 'active' : ''}" data-speed="ultra">${t("ultraName")}</button>
         </div>
       </div>
 
       <label class="chess-toggle-label">
-        <input type="checkbox" id="chess-auto-toggle" checked />
-        <span>🏹 Стрелки после каждого хода ✨</span>
+        <input type="checkbox" id="chess-auto-toggle" ${isAutoHintEnabled ? "checked" : ""} />
+        <span>${t("autoHintsLabel")}</span>
       </label>
 
       <label class="chess-toggle-label">
-        <input type="checkbox" id="chess-my-turn-toggle" checked />
-        <span>🎯 Стрелки только для моего хода ♟️</span>
+        <input type="checkbox" id="chess-my-turn-toggle" ${isOnlyMyTurnEnabled ? "checked" : ""} />
+        <span>${t("myTurnOnlyLabel")}</span>
       </label>
 
       <div class="chess-controls-group">
         <div class="chess-row">
-          <button id="btn-refresh-hints" class="primary" title="Заново пересчитать позицию на доске при баге или невозможном ходе">
-            🔄 Обновить
+          <button id="btn-refresh-hints" class="primary">
+            ${t("refreshBtn")}
           </button>
-          <button id="btn-toggle-hints" class="btn-toggle-hints" title="Включить или выключить подсказки">
-            ⏸️ Отключить
+          <button id="btn-toggle-hints" class="btn-toggle-hints">
+            ${isAutoHintEnabled ? t("disableBtn") : t("enableBtn")}
           </button>
         </div>
       </div>
 
-      <div id="chess-assistant-output">🚀 Готов к игре! Сделай ход или нажми кнопку 🎮✨</div>
+      <div id="chess-assistant-output">${t("readyMsg")}</div>
     </div>
   `;
 
@@ -1562,6 +1708,15 @@ function createWidget() {
     settingsPanel.style.display = "none";
   });
 
+  // Переключатель языка (RU / EN)
+  widget.querySelectorAll("[data-lang]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const lang = btn.getAttribute("data-lang");
+      setLanguage(lang);
+    });
+  });
+
   // Переключатель платформы (Chess.com / Lichess)
   widget.querySelectorAll("[data-platform]").forEach((btn) => {
     btn.addEventListener("click", (e) => {
@@ -1630,10 +1785,10 @@ function createWidget() {
   function updateToggleHintsUI() {
     if (toggleHintsBtn) {
       if (isAutoHintEnabled) {
-        toggleHintsBtn.innerText = "⏸️ Отключить";
+        toggleHintsBtn.innerText = t("disableBtn");
         toggleHintsBtn.classList.remove("hints-off");
       } else {
-        toggleHintsBtn.innerText = "▶️ Включить";
+        toggleHintsBtn.innerText = t("enableBtn");
         toggleHintsBtn.classList.add("hints-off");
       }
     }
@@ -1653,11 +1808,11 @@ function createWidget() {
       resetGameTracking();
 
       if (!board) {
-        if (out) out.innerText = "⚠️ Шахматная доска не найдена!";
+        if (out) out.innerText = t("boardNotFoundWarn");
         return;
       }
 
-      if (out) out.innerText = "🔄 Обновление позиции и пересчёт...";
+      if (out) out.innerText = t("refreshingMsg");
       requestBestMoves();
     });
   }
@@ -1671,10 +1826,10 @@ function createWidget() {
         clearTimeout(debounceTimer);
         clearOverlay();
         lastRenderedState = null;
-        if (out) out.innerText = "⏸️ Подсказки отключены (стрелки стёрты).";
+        if (out) out.innerText = t("hintsDisabledMsg");
       } else {
         lastAnalyzedFEN = "";
-        if (out) out.innerText = "▶️ Подсказки включены!";
+        if (out) out.innerText = t("hintsEnabledMsg");
         requestBestMoves();
       }
     });

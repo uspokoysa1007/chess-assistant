@@ -252,15 +252,15 @@ contentCode = contentCode.replace(
 
 contentCode = contentCode.replace(
   /<button type="button" class="btn-speed-pill \$\{speedMode === 'bullet' \? 'active' : ''\}" data-speed="bullet"[^>]*>.*?<\/button>/,
-  `<button type="button" class="btn-speed-pill \${speedMode === 'bullet' ? 'active' : ''}" data-speed="bullet">⚡ Пуля (50мс)</button>`
+  `<button type="button" class="btn-speed-pill \${speedMode === 'bullet' ? 'active' : ''}" data-speed="bullet">\${t("bulletNamePhone")}</button>`
 );
 contentCode = contentCode.replace(
   /<button type="button" class="btn-speed-pill \$\{speedMode === 'blitz' \? 'active' : ''\}" data-speed="blitz"[^>]*>.*?<\/button>/,
-  `<button type="button" class="btn-speed-pill \${speedMode === 'blitz' ? 'active' : ''}" data-speed="blitz">🎯 Блиц (100мс)</button>`
+  `<button type="button" class="btn-speed-pill \${speedMode === 'blitz' ? 'active' : ''}" data-speed="blitz">\${t("blitzNamePhone")}</button>`
 );
 contentCode = contentCode.replace(
   /<button type="button" class="btn-speed-pill \$\{speedMode === 'rapid' \? 'active' : ''\}" data-speed="rapid"[^>]*>.*?<\/button>/,
-  `<button type="button" class="btn-speed-pill \${speedMode === 'rapid' ? 'active' : ''}" data-speed="rapid">🧠 Рапид (150мс)</button>`
+  `<button type="button" class="btn-speed-pill \${speedMode === 'rapid' ? 'active' : ''}" data-speed="rapid">\${t("rapidNamePhone")}</button>`
 );
 contentCode = contentCode.replace(
   /<button type="button" class="btn-speed-pill[^"]*" data-speed="ultra"[^>]*>.*?<\/button>/g,
@@ -271,14 +271,14 @@ contentCode = contentCode.replace(
 const arrowSettingsBlock = `        <!-- 1. Режим стрелок (MultiPV 3 / MultiPV 5) -->
         <div class="setting-item">
           <div class="setting-label-row">
-            <span>🏹 Режим стрелок:</span>
+            <span>\${t("arrowModeLabel")}</span>
           </div>
           <div class="arrow-mode-column">
             <button type="button" class="btn-style-pill arrow-mode-btn \${arrowMode === 'multi3' ? 'active' : ''}" data-arrow-mode="multi3">
-              3 стрелки (чёрная / серая / белая)
+              \${t("arrowMode3")}
             </button>
             <button type="button" class="btn-style-pill arrow-mode-btn \${arrowMode === 'multi5' ? 'active' : ''}" data-arrow-mode="multi5">
-              5 чёрных стрелок с бейджами (MultiPV 5)
+              \${t("arrowMode5")}
             </button>
           </div>
         </div>
@@ -286,7 +286,7 @@ const arrowSettingsBlock = `        <!-- 1. Режим стрелок (MultiPV 3
         <!-- 2. Форма меток клеток (квадрат / круг / только стрелка) -->
         <div class="setting-item" style="margin-top: 6px;">`;
 
-const cleanSettingsBlock = `        <!-- Форма меток клеток (квадрат / круг / только стрелка) -->
+const cleanSettingsBlock = `        <!-- 2. Форма меток клеток (квадрат / круг / только стрелка) -->
         <div class="setting-item">`;
 
 contentCode = contentCode.replace(arrowSettingsBlock, cleanSettingsBlock);
@@ -319,17 +319,18 @@ contentCode = contentCode.replace(
 contentCode = contentCode.replace(
   /function formatMovesLog\([\s\S]*?return moves\.slice\(0, 3\)[\s\S]*?join\("\\n"\);\s*\}/,
   `function formatMovesLog(moves, activeTurn, isFlipped) {
-  if (!moves || moves.length === 0) return "Нет ходов";
+  if (!moves || moves.length === 0) return t("noMovesMsg");
   const m = moves[0];
   const s = formatScore(m.score, "M");
   const who = (score) => {
     if (!score) return "";
     const cp = score.type === "mate" ? (score.value > 0 ? 10000 : -10000) : score.value;
     const whiteCp = activeTurn === "w" ? cp : -cp;
-    return whiteCp > 0 ? "в твою пользу" : "в пользу соперника";
+    const isMine = (myColor === "w" && whiteCp > 0) || (myColor === "b" && whiteCp < 0);
+    return isMine ? t("inYourFavor") : t("opponentAdvantage");
   };
   const scorePart = s ? ' [' + s + ' • ' + who(m.score) + ']' : '';
-  return '⭐ Лучший ход: ' + m.move.slice(0, 2).toUpperCase() + ' ➔ ' + m.move.slice(2, 4).toUpperCase() + scorePart;
+  return t("bestMovePhone") + ' ' + m.move.slice(0, 2).toUpperCase() + ' ➔ ' + m.move.slice(2, 4).toUpperCase() + scorePart;
 }`
 );
 
@@ -352,7 +353,7 @@ contentCode = contentCode.replace(
 // Заголовок и бейдж
 contentCode = contentCode.replace(
   /<span>♟️ Stockfish 19<\/span>\s*<span class="badge">🔥 4050 ELO<\/span>/,
-  '<span>♟️ Stockfish 19 Lite WASM</span>\n        <span class="badge">⚡ 3650 ELO</span>'
+  '<span>♟️ \${t("titlePhone")}</span>\\n        <span class="badge">⚡ 3650 ELO</span>'
 );
 
 // Свернут по умолчанию в аккуратную плавающую кнопку
