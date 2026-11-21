@@ -251,16 +251,16 @@ contentCode = contentCode.replace(
 );
 
 contentCode = contentCode.replace(
-  /<button type="button" class="btn-speed-pill \$\{speedMode === 'bullet' \? 'active' : ''\}" data-speed="bullet"[^>]*>.*?<\/button>/,
-  `<button type="button" class="btn-speed-pill \${speedMode === 'bullet' ? 'active' : ''}" data-speed="bullet">\${t("bulletNamePhone")}</button>`
+  /<button type="button" class="btn-speed-pill[^"]*" data-speed="bullet"[^>]*>.*?<\/button>/,
+  `<button type="button" class="btn-speed-pill \${!amateurModeEnabled && speedMode === 'bullet' ? 'active' : ''}" data-speed="bullet">\${t("bulletNamePhone")}</button>`
 );
 contentCode = contentCode.replace(
-  /<button type="button" class="btn-speed-pill \$\{speedMode === 'blitz' \? 'active' : ''\}" data-speed="blitz"[^>]*>.*?<\/button>/,
-  `<button type="button" class="btn-speed-pill \${speedMode === 'blitz' ? 'active' : ''}" data-speed="blitz">\${t("blitzNamePhone")}</button>`
+  /<button type="button" class="btn-speed-pill[^"]*" data-speed="blitz"[^>]*>.*?<\/button>/,
+  `<button type="button" class="btn-speed-pill \${!amateurModeEnabled && speedMode === 'blitz' ? 'active' : ''}" data-speed="blitz">\${t("blitzNamePhone")}</button>`
 );
 contentCode = contentCode.replace(
-  /<button type="button" class="btn-speed-pill \$\{speedMode === 'rapid' \? 'active' : ''\}" data-speed="rapid"[^>]*>.*?<\/button>/,
-  `<button type="button" class="btn-speed-pill \${speedMode === 'rapid' ? 'active' : ''}" data-speed="rapid">\${t("rapidNamePhone")}</button>`
+  /<button type="button" class="btn-speed-pill[^"]*" data-speed="rapid"[^>]*>.*?<\/button>/,
+  `<button type="button" class="btn-speed-pill \${!amateurModeEnabled && speedMode === 'rapid' ? 'active' : ''}" data-speed="rapid">\${t("rapidNamePhone")}</button>`
 );
 contentCode = contentCode.replace(
   /<button type="button" class="btn-speed-pill[^"]*" data-speed="ultra"[^>]*>.*?<\/button>/g,
@@ -268,32 +268,19 @@ contentCode = contentCode.replace(
 );
 
 // Убираем блок смены стрелок из настроек (на телефоне строго 1 лучшая стрелка)
-const arrowSettingsBlock = `        <!-- 1. Режим стрелок (MultiPV 3 / MultiPV 5) -->
-        <div class="setting-item">
-          <div class="setting-label-row">
-            <span>\${t("arrowModeLabel")}</span>
-          </div>
-          <div class="arrow-mode-column">
-            <button type="button" class="btn-style-pill arrow-mode-btn \${arrowMode === 'multi3' ? 'active' : ''}" data-arrow-mode="multi3">
-              \${t("arrowMode3")}
-            </button>
-            <button type="button" class="btn-style-pill arrow-mode-btn \${arrowMode === 'multi5' ? 'active' : ''}" data-arrow-mode="multi5">
-              \${t("arrowMode5")}
-            </button>
-          </div>
-        </div>
-
-        <!-- 2. Форма меток клеток (квадрат / круг / только стрелка) -->
-        <div class="setting-item" style="margin-top: 6px;">`;
-
-const cleanSettingsBlock = `        <!-- 2. Форма меток клеток (квадрат / круг / только стрелка) -->
-        <div class="setting-item">`;
-
-contentCode = contentCode.replace(arrowSettingsBlock, cleanSettingsBlock);
+contentCode = contentCode.replace(
+  /<!-- 1\. Режим стрелок[\s\S]*?<!-- 2\. Форма меток клеток \(квадрат \/ круг \/ только стрелка\) -->\s*<div class="setting-item" style="margin-top: 6px;">/,
+  '<!-- 2. Форма меток клеток (квадрат / круг / только стрелка) -->\n        <div class="setting-item">'
+);
 
 contentCode = contentCode.replace(
-  /\/\/ Переключение режима стрелок \(MultiPV 3 \/ MultiPV 5\)[\s\S]*?requestBestMoves\(\);\s*\}\);\s*\}\);/,
+  /\/\/ Переключение режима стрелок[\s\S]*?requestBestMoves\(\);\s*\}\);\s*\}\);/,
   '// Режим стрелок зафиксирован на 1 стрелке'
+);
+
+contentCode = contentCode.replace(
+  /let arrowMode = localStorage\.getItem\("chess_arrow_mode"\) \|\| "multi3";/,
+  'let arrowMode = "multi1";'
 );
 
 // Отрисовка ровно 1 стрелки
@@ -311,8 +298,8 @@ const singleArrowDrawBlock = `  // 1 лучшая стрелка (максима
   }`;
 
 contentCode = contentCode.replace(
-  /if \(arrowMode === "multi5" && validMoves\.length > 0\) \{[\s\S]*?drawBadge\(ctx, items\[i\]\.end, items\[i\]\.score, items\[i\]\.color, dpr, items\[i\]\.badgePos, items\[i\]\.extraY\);\s*\}\s*\}/,
-  singleArrowDrawBlock
+  /hasOverlayDrawings = true;\s*if \(arrowMode === "multi5"[\s\S]*?function handleResizeOrOrientation\(\)/,
+  `hasOverlayDrawings = true;\n\n${singleArrowDrawBlock}\n}\n\n// ==========================================\n// 4. Поворот экрана и ресайз (Исправление бага!)\n// ==========================================\nfunction handleResizeOrOrientation()`
 );
 
 // Компактный вывод в лог (1 лучший ход)
@@ -352,8 +339,8 @@ contentCode = contentCode.replace(
 
 // Заголовок и бейдж
 contentCode = contentCode.replace(
-  /<span>♟️ Stockfish 19<\/span>\s*<span class="badge">🔥 4050 ELO<\/span>/,
-  '<span>♟️ \${t("titlePhone")}</span>\\n        <span class="badge">⚡ 3650 ELO</span>'
+  /<span>Stockfish 19<\/span>\s*<span class="badge">4050 ELO<\/span>/,
+  '<span>♟️ \${t("titlePhone")}</span>\n        <span class="badge">⚡ 3650 ELO</span>'
 );
 
 // Свернут по умолчанию в аккуратную плавающую кнопку
@@ -387,7 +374,7 @@ contentCode = contentCode.replace(
   /if \(isOnlyMyTurnEnabled && isOpponentTurn\) \{[\s\S]*?onAnalysisReceived\(res, fen, true\);\s*return;\s*\}/,
   `if (isOpponentTurn) {
     clearOverlay();
-    if (output) output.innerText = "⏳ Ход соперника... Ожидаем ответ ☕";
+    if (output) output.innerText = "⏳ " + t("oppTurnWait");
     return;
   }`
 );
@@ -398,7 +385,11 @@ contentCode = contentCode.replace(
 
 // multiPV: 1
 contentCode = contentCode.replace(
-  /multiPV:\s*arrowMode\s*===\s*"multi5"\s*\?\s*5\s*:\s*3/g,
+  /multiPV:\s*cfg\.multiPV\s*\|\|\s*\(arrowMode === "multi5" \? 5 : \(arrowMode === "multi1" \? 1 : 3\)\)/g,
+  'multiPV: 1'
+);
+contentCode = contentCode.replace(
+  /multiPV:\s*arrowMode === "multi5" \? 5 : \(arrowMode === "multi1" \? 1 : 3\)/g,
   'multiPV: 1'
 );
 
@@ -455,8 +446,14 @@ contentCode = contentCode.replace(
 );
 
 // 7. Обфускация
-const scratchBundle = 'C:/Users/fonya/.gemini/antigravity/brain/8ade855d-8452-4aa6-9764-aee78b8d5d0e/scratch/obfuscator.bundle.js';
-const Obfuscator = require(scratchBundle);
+function getObfuscator() {
+  const localObf = path.join(ROOT_DIR, 'scripts/obfuscator.bundle.js');
+  if (fs.existsSync(localObf)) return require(localObf);
+  const scratchBundle = 'C:/Users/fonya/.gemini/antigravity/brain/8ade855d-8452-4aa6-9764-aee78b8d5d0e/scratch/obfuscator.bundle.js';
+  return require(scratchBundle);
+}
+
+const Obfuscator = getObfuscator();
 
 const obfOptions = {
   compact: true,

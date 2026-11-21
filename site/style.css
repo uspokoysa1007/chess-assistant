@@ -275,7 +275,39 @@ a {
   font-size: 1.2rem;
   color: var(--text-muted);
   max-width: 680px;
+  margin: 0 auto 24px;
+}
+
+.hero-friend-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 20px;
   margin: 0 auto 36px;
+  border-radius: 999px;
+  background: rgba(168, 85, 247, 0.08);
+  border: 1px dashed rgba(168, 85, 247, 0.45);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: #d8b4fe;
+  letter-spacing: 0.2px;
+  box-shadow: 0 0 20px rgba(168, 85, 247, 0.12);
+  transition: all 0.3s ease;
+  user-select: none;
+}
+
+.hero-friend-tag:hover {
+  background: rgba(168, 85, 247, 0.16);
+  border-color: rgba(168, 85, 247, 0.75);
+  box-shadow: 0 0 25px rgba(168, 85, 247, 0.3);
+  transform: translateY(-2px);
+  color: #f3e8ff;
+}
+
+.friend-tag-icon {
+  font-size: 0.95rem;
+  line-height: 1;
 }
 
 /* Кнопки */

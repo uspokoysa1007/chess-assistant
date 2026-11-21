@@ -4,14 +4,12 @@
 const extApi = typeof browser !== "undefined" ? browser : chrome;
 console.log("♟️ [Content Script] Шахматный Помощник загружен (Chess.com & Lichess)!");
 
-// Base64 иконка пешки (защита от отдельного файла в папке)
-const PAWN_ICON_BASE64 = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0OCA0OCIgd2lkdGg9IjQ4IiBoZWlnaHQ9IjQ4Ij48ZGVmcz48bGluZWFyR3JhZGllbnQgaWQ9InBhd25HcmFkIiB4MT0iMCUiIHkxPSIwJSIgeDI9IjAlIiB5Mj0iMTAwJSI+PHN0b3Agb2Zmc2V0PSIwJSIgc3RvcC1jb2xvcj0iI2ZmZmZmZiIvPjxzdG9wIG9mZnNldD0iNTAlIiBzdG9wLWNvbG9yPSIjZTJlOGYwIi8+PHN0b3Agb2Zmc2V0PSIxMDAlIiBzdG9wLWNvbG9yPSIjY2JkNWUxIi8+PC9saW5lYXJHcmFkaWVudD48ZmlsdGVyIGlkPSJwYXduR2xvdyIgeD0iLTIwJSIgeT0iLTIwJSIgd2lkdGg9IjE0MCUiIGhlaWdodD0iMTQwJSI+PGZlRHJvcFNoYWRvdyBkeD0iMCIgZHk9IjEuNSIgc3RkRGV2aWF0aW9uPSIxLjUiIGZsb29kLWNvbG9yPSIjMDAwMDAwIiBmbG9vZC1vcGFjaXR5PSIwLjQ1Ii8+PC9maWx0ZXI+PC9kZWZzPjxnIGZpbHRlcj0idXJsKCNwYXduR2xvdykiPjxwYXRoIGQ9Ik0gMTIgNDEgQyAxMiAzOS41LCAzNiAzOS41LCAzNiA0MSBMIDM3IDQzLjUgQyAzNyA0NC41LCAxMSA0NC41LCAxMSA0My41IFoiIGZpbGw9InVybCgjcGF3bkdyYWQpIiBzdHJva2U9IiMzMzQxNTUiIHN0cm9rZS13aWR0aD0iMS42IiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+PHBhdGggZD0iTSAxNC41IDM2LjUgQyAxNC41IDM1LjUsIDMzLjUgMzUuNSwgMzMuNSAzNi41IEwgMzUgMzkuNSBDIDM1IDQwLjUsIDEzIDQwLjUsIDEzIDM5LjUgWiIgZpbGw9InVybCgjcGF3bkdyYWQpIiBzdHJva2U9IiMzMzQxNTUiIHN0cm9rZS13aWR0aD0iMS42IiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+PHBhdGggZD0iTSAyMC41IDE5LjUgQyAyMS41IDI0LjUsIDE2LjUgMjguNSwgMTYgMzUuNSBDIDE2IDM2LjUsIDMyIDM2LjUsIDMyIDM1LjUgQyAzMS41IDI4LjUsIDI2LjUgMjQuNSwgMjcuNSAxOS41IFoiIGZpbGw9InVybCgjcGF3bkdyYWQpIiBzdHJva2U9IiMzMzQxNTUiIHN0cm9rZS13aWR0aD0iMS42IiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+PGVsbGlwc2UgY3g9IjI0IiBjeT0iMTguNSIgcng9IjUuNSIgcnk9IjEuOCIgZmlsbD0idXJsKCNwYXduR2xvdykiIHN0cm9rZT0iIzMzNDE1NSIgc3Ryb2tlLXdpZHRoPSIxLjYiLz48Y2lyY2xlIGN4PSIyNCIgY3k9IjExLjUiIHI9IjYiIGZpbGw9InVybCgjcGF3bkdyYWQpIiBzdHJva2U9IiMzMzQxNTUiIHN0cm9rZS13aWR0aD0iMS42Ii8+PGVsbGlwc2UgY3g9IjIyLjIiIGN5PSI5LjgiIHJ4PSIyIiByeT0iMS40IiBmaWxsPSIjZmZmZmZmIiBvcGFjaXR5PSIwLjc1Ii8+PC9nPjwvc3ZnPg==";
-
 let boardObserver = null;
 let currentObservedBoard = null;
 let isAutoHintEnabled = true;
 let isOnlyMyTurnEnabled = true;
 let isMinimized = false;
+let isUserInteractingWithBoard = false;
 let debounceTimer = null;
 let lastAnalyzedFEN = "";
 let lastBoardFlipped = null;
@@ -25,106 +23,114 @@ const TRANSLATIONS = {
   ru: {
     title: "Stockfish 19",
     titlePhone: "Stockfish 19 Lite WASM",
-    settingsTitle: "⚙️ Настройки",
-    langLabel: "🌐 Язык интерфейса / Language:",
-    arrowModeLabel: "🏹 Режим стрелок:",
+    settingsTitle: "Настройки",
+    langLabel: "Язык / Language:",
+    arrowModeLabel: "Режим стрелок:",
+    arrowMode1: "1 стрелка (только лучший ход)",
     arrowMode3: "3 стрелки (чёрная / серая / белая)",
-    arrowMode5: "5 чёрных стрелок с бейджами (MultiPV 5)",
-    markerStyleLabel: "🎯 Стиль меток на клетках:",
-    markerSquare: "⏹️ Квадрат",
-    markerCircle: "⏺️ Круг",
-    markerNone: "🏹 Только стрелка",
-    evalLabel: "📊 Оценка:",
-    equalPos: "⚖️ Равная позиция",
-    almostEqualPos: "⚖️ Примерно равная позиция",
+    arrowMode5: "5 стрелок с бейджами (MultiPV 5)",
+    markerStyleLabel: "Стиль меток:",
+    markerSquare: "Квадрат",
+    markerCircle: "Круг",
+    markerNone: "Только стрелка",
+    evalLabel: "Оценка:",
+    equalPos: "Равная позиция",
+    almostEqualPos: "Примерно равная позиция",
     advantageWhite: "Преимущество белых",
     advantageBlack: "Преимущество чёрных",
-    inYourFavor: "(в твою пользу! 🎉)",
-    opponentAdvantage: "(в пользу соперника ⚠️)",
-    bulletName: "⚡ Пуля (150мс)",
-    blitzName: "🎯 Блиц (~0.5с)",
-    rapidName: "🧠 Рапид",
-    ultraName: "👑 Ультра (7с • 26х)",
-    bulletNamePhone: "⚡ Пуля (50мс)",
-    blitzNamePhone: "🎯 Блиц (100мс)",
-    rapidNamePhone: "🧠 Рапид (150мс)",
-    autoHintsLabel: "🏹 Стрелки после каждого хода ✨",
-    myTurnOnlyLabel: "🎯 Стрелки только для моего хода ♟️",
-    refreshBtn: "🔄 Обновить",
-    disableBtn: "⏸️ Отключить",
-    enableBtn: "▶️ Включить",
-    readyMsg: "🚀 Готов к игре! Сделай ход или нажми кнопку 🎮✨",
-    boardNotFound: "❌ Доска не найдена. Открой партию!",
-    boardNotFoundWarn: "⚠️ Шахматная доска не найдена!",
-    oppTurnWait: "⏳ Ход соперника... Ожидаем ответ ☕",
-    oppTurnPremove: "⏳ Ход соперника... Считаю премув (до 2с) 🟢💭",
-    premoveLabel: "🟢 Премув:",
+    inYourFavor: "(в твою пользу)",
+    opponentAdvantage: "(в пользу соперника)",
+    bulletName: "Пуля (150мс)",
+    blitzName: "Блиц (~0.5с)",
+    rapidName: "Рапид",
+    ultraName: "Ультра (7с / 26х)",
+    bulletNamePhone: "Пуля (50мс)",
+    blitzNamePhone: "Блиц (100мс)",
+    rapidNamePhone: "Рапид (150мс)",
+    autoHintsLabel: "Стрелки после каждого хода",
+    myTurnOnlyLabel: "Только мой ход",
+    refreshBtn: "Обновить",
+    disableBtn: "Отключить",
+    enableBtn: "Включить",
+    readyMsg: "Готов. Сделай ход или нажми кнопку.",
+    boardNotFound: "Доска не найдена. Открой партию.",
+    boardNotFoundWarn: "Шахматная доска не найдена.",
+    oppTurnWait: "Ход соперника...",
+    oppTurnPremove: "Ход соперника... считаю премув",
+    premoveLabel: "Премув:",
     premoveOnOpp: "на",
-    noMovesMsg: "⚠️ Ходы не найдены или партия завершена.",
-    refreshingMsg: "🔄 Обновление позиции и пересчёт...",
-    hintsDisabledMsg: "⏸️ Подсказки отключены (стрелки стёрты).",
-    hintsEnabledMsg: "▶️ Подсказки включены!",
-    switchedTo: "🔄 Переключено на",
+    noMovesMsg: "Ходы не найдены или партия завершена.",
+    refreshingMsg: "Пересчёт позиции...",
+    hintsDisabledMsg: "Подсказки отключены.",
+    hintsEnabledMsg: "Подсказки включены.",
+    switchedTo: "Переключено на",
     searchingTurn: "ищет ход",
-    ultraThinking: "👑 Ультра-режим: глубокий расчёт до 26 ходов",
+    ultraThinking: "Ультра: расчёт до 26 ходов",
     whiteGen: "белых",
     blackGen: "чёрных",
-    label1st: "⬛ 1-й",
-    label2nd: "◻️ 2-й",
-    label3rd: "▫️ 3-й",
-    bestMovePhone: "⭐ Лучший ход:"
+    label1st: "1-й",
+    label2nd: "2-й",
+    label3rd: "3-й",
+    bestMovePhone: "Лучший ход:",
+    amateurModeLabel: "Легит-режим (80–85%):",
+    amateurModeOn: "🟢 Легит включён",
+    amateurModeOff: "⚪ Включить Легит"
   },
   en: {
     title: "Stockfish 19",
     titlePhone: "Stockfish 19 Lite WASM",
-    settingsTitle: "⚙️ Settings",
-    langLabel: "🌐 Language / Язык интерфейса:",
-    arrowModeLabel: "🏹 Arrow mode:",
+    settingsTitle: "Settings",
+    langLabel: "Language / Язык:",
+    arrowModeLabel: "Arrow mode:",
+    arrowMode1: "1 arrow (best move only)",
     arrowMode3: "3 arrows (black / gray / white)",
-    arrowMode5: "5 black arrows with badges (MultiPV 5)",
-    markerStyleLabel: "🎯 Square marker style:",
-    markerSquare: "⏹️ Square",
-    markerCircle: "⏺️ Circle",
-    markerNone: "🏹 Arrow only",
-    evalLabel: "📊 Eval:",
-    equalPos: "⚖️ Equal position",
-    almostEqualPos: "⚖️ Roughly equal position",
+    arrowMode5: "5 arrows with badges (MultiPV 5)",
+    markerStyleLabel: "Marker style:",
+    markerSquare: "Square",
+    markerCircle: "Circle",
+    markerNone: "Arrow only",
+    evalLabel: "Eval:",
+    equalPos: "Equal position",
+    almostEqualPos: "Roughly equal position",
     advantageWhite: "White is winning",
     advantageBlack: "Black is winning",
-    inYourFavor: "(in your favor! 🎉)",
-    opponentAdvantage: "(opponent advantage ⚠️)",
-    bulletName: "⚡ Bullet (150ms)",
-    blitzName: "🎯 Blitz (~0.5s)",
-    rapidName: "🧠 Rapid",
-    ultraName: "👑 Ultra (7s • 26d)",
-    bulletNamePhone: "⚡ Bullet (50ms)",
-    blitzNamePhone: "🎯 Blitz (100ms)",
-    rapidNamePhone: "🧠 Rapid (150ms)",
-    autoHintsLabel: "🏹 Arrows after each move ✨",
-    myTurnOnlyLabel: "🎯 Arrows only for my turn ♟️",
-    refreshBtn: "🔄 Refresh",
-    disableBtn: "⏸️ Disable",
-    enableBtn: "▶️ Enable",
-    readyMsg: "🚀 Ready to play! Make a move or click a button 🎮✨",
-    boardNotFound: "❌ Chessboard not found. Open a game!",
-    boardNotFoundWarn: "⚠️ Chessboard not found!",
-    oppTurnWait: "⏳ Opponent's turn... Waiting for move ☕",
-    oppTurnPremove: "⏳ Opponent's turn... Calculating premove (up to 2s) 🟢💭",
-    premoveLabel: "🟢 Premove:",
+    inYourFavor: "(in your favor)",
+    opponentAdvantage: "(opponent advantage)",
+    bulletName: "Bullet (150ms)",
+    blitzName: "Blitz (~0.5s)",
+    rapidName: "Rapid",
+    ultraName: "Ultra (7s / 26d)",
+    bulletNamePhone: "Bullet (50ms)",
+    blitzNamePhone: "Blitz (100ms)",
+    rapidNamePhone: "Rapid (150ms)",
+    autoHintsLabel: "Arrows after each move",
+    myTurnOnlyLabel: "My turn only",
+    refreshBtn: "Refresh",
+    disableBtn: "Disable",
+    enableBtn: "Enable",
+    readyMsg: "Ready. Make a move or click a button.",
+    boardNotFound: "Board not found. Open a game.",
+    boardNotFoundWarn: "Chessboard not found.",
+    oppTurnWait: "Opponent's turn...",
+    oppTurnPremove: "Opponent's turn... calculating premove",
+    premoveLabel: "Premove:",
     premoveOnOpp: "against",
-    noMovesMsg: "⚠️ No moves found or game over.",
-    refreshingMsg: "🔄 Refreshing position and recalculating...",
-    hintsDisabledMsg: "⏸️ Hints disabled (arrows cleared).",
-    hintsEnabledMsg: "▶️ Hints enabled!",
-    switchedTo: "🔄 Switched to",
+    noMovesMsg: "No moves found or game over.",
+    refreshingMsg: "Recalculating position...",
+    hintsDisabledMsg: "Hints disabled.",
+    hintsEnabledMsg: "Hints enabled.",
+    switchedTo: "Switched to",
     searchingTurn: "calculating move for",
-    ultraThinking: "👑 Ultra mode: deep search up to 26 moves",
+    ultraThinking: "Ultra: deep search up to 26 moves",
     whiteGen: "White",
     blackGen: "Black",
-    label1st: "⬛ 1st",
-    label2nd: "◻️ 2nd",
-    label3rd: "▫️ 3rd",
-    bestMovePhone: "⭐ Best move:"
+    label1st: "1st",
+    label2nd: "2nd",
+    label3rd: "3rd",
+    bestMovePhone: "Best move:",
+    amateurModeLabel: "Legit mode (80–85%):",
+    amateurModeOn: "🟢 Legit enabled",
+    amateurModeOff: "⚪ Enable Legit"
   }
 };
 
@@ -154,9 +160,76 @@ function setLanguage(lang) {
 }
 
 // Настройки режимов (сохраняются в localStorage)
-let arrowMode = localStorage.getItem("chess_arrow_mode") || "multi3"; // "multi3" | "multi5"
+let arrowMode = localStorage.getItem("chess_arrow_mode") || "multi3"; // "multi1" | "multi3" | "multi5"
 let markerShape = localStorage.getItem("chess_marker_shape") || "square"; // "square" | "circle" | "none"
 let speedMode = localStorage.getItem("chess_speed_mode") || "bullet"; // "bullet" | "blitz" | "rapid" | "ultra"
+
+// ==========================================
+// МОДУЛЬ «ЛЮБИТЕЛЬ» (Accuracy 80–85%)
+// ==========================================
+// Имитирует игру уровня CM/любителя: Stockfish иногда
+// намеренно выбирает не лучший ход, как живой игрок.
+let amateurModeEnabled = localStorage.getItem("chess_amateur_mode") === "true";
+
+const AMATEUR_CONFIG = {
+  // Вероятность сыграть ЛУЧШИЙ ход (остальное — случайный субоптимальный)
+  bestMoveProb: 0.72,
+  // Максимальный допустимый «ляп» в сантипешках (больше — не выбираем)
+  maxBlunderCp: 150,
+  // При мате или угрозе мата — всегда лучший ход
+  forceBestOnMate: true,
+  // Пониженная глубина (уровень сильного любителя ~1700–1900 ELO)
+  depth: 11,
+  // Задержка «раздумья» перед показом стрелки (мс): [min, max]
+  delayMs: [2000, 3000],
+};
+
+/**
+ * Выбирает ход в стиле любителя (точность ~80–85%).
+ * @param {Array} moves — массив {move, score} от Stockfish (по убыванию качества: [0] = лучший)
+ * @returns {{move, score}} — выбранный ход
+ */
+function amateurPickMove(moves) {
+  if (!moves || moves.length === 0) return null;
+  if (moves.length === 1) return moves[0];
+
+  const best = moves[0];
+
+  // Всегда играем лучший ход при мате или угрозе мата
+  if (AMATEUR_CONFIG.forceBestOnMate) {
+    if (best.score?.type === "mate") return best;
+    // Если у лучшего хода огромный перевес (> 8 пешек) — позиция решена, не блундерим
+    if (best.score?.type === "cp" && Math.abs(best.score.value) > 800) return best;
+  }
+
+  // Бросаем монетку: играем лучший ход или нет?
+  const roll = Math.random();
+  if (roll < AMATEUR_CONFIG.bestMoveProb) return best;
+
+  // Собираем «безопасные» субоптимальные ходы (не слишком плохие)
+  const bestCp = best.score?.type === "cp" ? best.score.value : 0;
+  const candidates = moves.slice(1).filter((m) => {
+    if (!m.score) return true;
+    if (m.score.type === "mate" && m.score.value < 0) return false; // ход ведёт к мату — исключаем
+    if (m.score.type === "cp") {
+      const diff = Math.abs(bestCp - m.score.value);
+      return diff <= AMATEUR_CONFIG.maxBlunderCp;
+    }
+    return true;
+  });
+
+  if (candidates.length === 0) return best; // нет безопасных альтернатив — лучший ход
+
+  // Взвешенный выбор: второй ход выбирается чаще, чем третий
+  const weights = candidates.map((_, i) => 1 / (i + 1.5));
+  const totalW = weights.reduce((a, b) => a + b, 0);
+  let r = Math.random() * totalW;
+  for (let i = 0; i < candidates.length; i++) {
+    r -= weights[i];
+    if (r <= 0) return candidates[i];
+  }
+  return candidates[candidates.length - 1];
+}
 
 // Определение платформы: авто по location.hostname с сохранением в localStorage
 function detectInitialPlatform() {
@@ -234,9 +307,6 @@ const Adapters = {
     },
     isInteracting(board) {
       return isUserInteractingWithBoard || this.isDragging(board) || this.isSelecting(board);
-    },
-    isDraggingOrSelecting(board) {
-      return this.isInteracting(board);
     },
     detectTurn(board) {
       const isFlipped = this.isBoardFlipped(board);
@@ -445,9 +515,6 @@ const Adapters = {
     isInteracting(board) {
       return isUserInteractingWithBoard || this.isDragging(board) || this.isSelecting(board);
     },
-    isDraggingOrSelecting(board) {
-      return this.isInteracting(board);
-    },
     detectTurn(board) {
       const isFlipped = this.isBoardFlipped(board);
       if (document.querySelector(".rclock-bottom.running, .rclock.white.running")) {
@@ -636,11 +703,7 @@ function isBoardFlipped(board) {
 }
 function isDragging(board) {
   const adapter = getAdapter();
-  if (adapter.isDragging) return adapter.isDragging(board || getBoardElement());
-  return adapter.isDraggingOrSelecting(board || getBoardElement());
-}
-function isDraggingOrSelecting(board) {
-  return isDragging(board);
+  return adapter.isDragging ? adapter.isDragging(board || getBoardElement()) : false;
 }
 function isInteractingWithBoard(board) {
   if (isUserInteractingWithBoard) return true;
@@ -691,7 +754,7 @@ function requestMovesFromBackground(fen, cfg = {}) {
       fen,
       depth: cfg.depth || null,
       movetime: cfg.movetime || null,
-      multiPV: cfg.multiPV || (arrowMode === "multi5" ? 5 : 3)
+      multiPV: cfg.multiPV || (arrowMode === "multi5" ? 5 : (arrowMode === "multi1" ? 1 : 3))
     };
 
     extApi.runtime.sendMessage(payload, (res) => {
@@ -721,11 +784,6 @@ function formatScore(score, matePrefix = "M") {
   return (val > 0 ? "+" : "") + val.toFixed(1);
 }
 
-function removeOldSideEvalBar() {
-  const old = document.getElementById("chess-eval-bar-wrapper");
-  if (old) old.remove();
-}
-
 function getAdvantageText(score, activeTurn, isFlipped) {
   if (!score) return t("equalPos");
   let cp = score.type === "mate" ? (score.value > 0 ? 10000 : -10000) : score.value;
@@ -743,7 +801,6 @@ function getAdvantageText(score, activeTurn, isFlipped) {
 }
 
 function updateEvalBar(score, activeTurn) {
-  removeOldSideEvalBar();
   let cp = 0;
   if (score) {
     if (score.type === "mate") {
@@ -764,7 +821,12 @@ function updateEvalBar(score, activeTurn) {
   const widgetScore = document.querySelector(".widget-eval-score");
   const widgetDesc = document.querySelector(".widget-eval-desc");
 
-  const scoreText = formatScore(score);
+  // Нормализуем оценку со стороны белых (общепринятый шахматный стандарт шкалы оценки)
+  const normalizedScore = score ? {
+    type: score.type,
+    value: activeTurn === "w" ? score.value : -score.value
+  } : null;
+  const scoreText = formatScore(normalizedScore);
   const advText = getAdvantageText(score, activeTurn, isFlipped);
 
   if (widgetFill) widgetFill.style.width = `${whitePercent}%`;
@@ -800,7 +862,6 @@ function getOrCreateCanvas(board) {
 
 function clearOverlay() {
   hasOverlayDrawings = false;
-  removeOldSideEvalBar();
   const canvas = document.getElementById("chess-canvas-overlay");
   if (canvas) {
     const ctx = canvas.getContext("2d");
@@ -1150,6 +1211,28 @@ function drawAllVisuals({ moves = [], premoveMove = null } = {}) {
     return;
   }
 
+  // Режим: 1 стрелка (только лучший ход)
+  if (arrowMode === "multi1" && validMoves.length > 0) {
+    const best = validMoves[0];
+    const start = getSquareBox(best.move.slice(0, 2), squareSize, dpr, isFlipped);
+    const end = getSquareBox(best.move.slice(2, 4), squareSize, dpr, isFlipped);
+    const arrowColor = "#000000";
+
+    drawSquareMarker(ctx, start, arrowColor, dpr);
+    drawSquareMarker(ctx, end, arrowColor, dpr);
+    drawArrow(ctx, start, end, arrowColor, dpr);
+    drawBadge(ctx, end, best.score, arrowColor, dpr, "top-center", 0);
+
+    if (hasPremove) {
+      const pStart = getSquareBox(premoveMove.slice(0, 2), squareSize, dpr, isFlipped);
+      const pEnd = getSquareBox(premoveMove.slice(2, 4), squareSize, dpr, isFlipped);
+      drawSquareMarker(ctx, pStart, PREMOVE_COLOR, dpr);
+      drawSquareMarker(ctx, pEnd, PREMOVE_COLOR, dpr);
+      drawArrow(ctx, pStart, pEnd, PREMOVE_COLOR, dpr);
+    }
+    return;
+  }
+
   // Режим 1: 3 стрелки (чёрная / серая / белая)
   if (validMoves.length > 0) {
     const top3 = validMoves.slice(0, 3);
@@ -1217,7 +1300,58 @@ window.addEventListener("orientationchange", () => {
   setTimeout(handleResizeOrOrientation, 150);
 });
 
-let isUserInteractingWithBoard = false;
+// Глобальная поддержка перетаскивания (мышь + сенсор) без утечки слушателей
+let startX = 0, startY = 0, startRight = 14, startBottom = 12;
+let isWidgetDragging = false, hasWidgetDragged = false;
+
+function onDragStart(clientX, clientY, target) {
+  const widget = document.getElementById("chess-assistant-widget");
+  if (!widget) return;
+  if (!isMinimized && !target.closest(".widget-header")) return;
+  startX = clientX;
+  startY = clientY;
+  const rect = widget.getBoundingClientRect();
+  startRight = window.innerWidth - rect.right;
+  startBottom = window.innerHeight - rect.bottom;
+  isWidgetDragging = true;
+  hasWidgetDragged = false;
+}
+
+function onDragMove(clientX, clientY) {
+  if (!isWidgetDragging) return;
+  const widget = document.getElementById("chess-assistant-widget");
+  if (!widget) return;
+  const dx = clientX - startX;
+  const dy = clientY - startY;
+  if (Math.hypot(dx, dy) > 5) {
+    hasWidgetDragged = true;
+    const newRight = Math.max(4, Math.min(window.innerWidth - widget.offsetWidth - 4, startRight - dx));
+    const newBottom = Math.max(4, Math.min(window.innerHeight - widget.offsetHeight - 4, startBottom - dy));
+    widget.style.right = `${newRight}px`;
+    widget.style.bottom = `${newBottom}px`;
+    widget.style.left = "auto";
+    widget.style.top = "auto";
+  }
+}
+
+function onDragEnd() {
+  isWidgetDragging = false;
+}
+
+window.addEventListener("mousemove", (e) => {
+  if (isWidgetDragging) onDragMove(e.clientX, e.clientY);
+});
+window.addEventListener("mouseup", () => {
+  if (isWidgetDragging) onDragEnd();
+});
+window.addEventListener("touchmove", (e) => {
+  if (isWidgetDragging && e.touches.length === 1) {
+    onDragMove(e.touches[0].clientX, e.touches[0].clientY);
+  }
+}, { passive: true });
+window.addEventListener("touchend", () => {
+  if (isWidgetDragging) onDragEnd();
+}, { passive: true });
 
 window.addEventListener("pointerdown", (e) => {
   const board = getBoardElement();
@@ -1299,9 +1433,16 @@ async function requestBestMoves() {
     return;
   }
 
-  const cfg = SPEED_MODES[speedMode] || SPEED_MODES.bullet;
+  let cfg = SPEED_MODES[speedMode] || SPEED_MODES.bullet;
   const turnName = activeTurn === "w" ? t("whiteGen") : t("blackGen");
-  if (output) {
+
+  // Легит-режим: пониженная глубина (depth 11) вместо любого speed-режима
+  if (amateurModeEnabled) {
+    cfg = { ...cfg, depth: AMATEUR_CONFIG.depth, movetime: null };
+    if (output) {
+      output.innerText = `🟢 ${t("amateurModeOn")} — ${t("searchingTurn")} (${turnName})... 🤔💭`;
+    }
+  } else if (output) {
     if (speedMode === "ultra") {
       output.innerText = `${t("ultraThinking")} (${turnName}, ~7s)... 🧠⏳`;
     } else {
@@ -1311,8 +1452,30 @@ async function requestBestMoves() {
 
   const res = await requestMovesFromBackground(fen, {
     ...cfg,
-    multiPV: arrowMode === "multi5" ? 5 : 3
+    multiPV: arrowMode === "multi5" ? 5 : (arrowMode === "multi1" ? 1 : 3)
   });
+
+  // Легит-режим: «человеческая пауза» перед показом стрелки (2–3 сек)
+  if (amateurModeEnabled && !isOpponentTurn) {
+    const [minD, maxD] = AMATEUR_CONFIG.delayMs;
+    const delay = minD + Math.random() * (maxD - minD);
+    await new Promise(r => setTimeout(r, delay));
+    if (!isAutoHintEnabled) {
+      clearOverlay();
+      return;
+    }
+    // Позиция могла смениться за время паузы — проверяем
+    const liveBoard = getBoardElement();
+    if (liveBoard) {
+      const liveFEN = parseBoardToFEN(liveBoard);
+      if (liveFEN && liveFEN !== fen) {
+        lastAnalyzedFEN = "";
+        requestBestMoves();
+        return;
+      }
+    }
+  }
+
   onAnalysisReceived(res, fen, isOpponentTurn);
 }
 
@@ -1325,6 +1488,14 @@ function formatMovesLog(moves, activeTurn, isFlipped) {
     const isMine = (myColor === "w" && whiteCp > 0) || (myColor === "b" && whiteCp < 0);
     return isMine ? t("inYourFavor") : t("opponentAdvantage");
   };
+
+  if (arrowMode === "multi1") {
+    const m = moves[0];
+    if (!m) return t("noMovesMsg");
+    const s = formatScore(m.score, "M");
+    const scorePart = s ? ` [${s} • ${who(m.score)}]` : "";
+    return `#1: ${m.move.slice(0, 2).toUpperCase()} ➔ ${m.move.slice(2, 4).toUpperCase()}${scorePart}`;
+  }
 
   if (arrowMode === "multi5") {
     return moves.slice(0, 5).map((m, i) => {
@@ -1344,6 +1515,10 @@ function formatMovesLog(moves, activeTurn, isFlipped) {
 
 function onAnalysisReceived(res, fen, isOpponentTurn) {
   if (!res || res.cancelled) return;
+  if (!isAutoHintEnabled) {
+    clearOverlay();
+    return;
+  }
 
   const board = getBoardElement();
   const output = document.getElementById("chess-assistant-output");
@@ -1375,6 +1550,20 @@ function onAnalysisReceived(res, fen, isOpponentTurn) {
   const moves = res.moves || [];
   const bestScore = moves[0]?.score || res.bestScore || null;
 
+  // === РЕЖИМ ЛЮБИТЕЛЯ ===
+  // Если включён, иногда показываем не лучший ход, а чуть похуже
+  let displayMoves = moves;
+  if (amateurModeEnabled && moves.length > 0 && !isOpponentTurn) {
+    const picked = amateurPickMove(moves);
+    if (picked && picked.move !== moves[0].move) {
+      // Перекладываем выбранный ход на первое место (остальные убираем из подсказки)
+      displayMoves = [picked];
+      console.log(`🎭 [Любитель] Выбран ход: ${picked.move} (вместо лучшего ${moves[0].move})`);
+    } else {
+      displayMoves = [moves[0]]; // показываем только 1 стрелку в режиме любителя
+    }
+  }
+
   if (isOpponentTurn && isOnlyMyTurnEnabled) {
     if (res.ponderMove) {
       updateEvalBar(bestScore, activeTurn);
@@ -1400,12 +1589,15 @@ function onAnalysisReceived(res, fen, isOpponentTurn) {
 
   updateEvalBar(bestScore, activeTurn);
   drawAllVisuals({
-    moves,
+    moves: displayMoves,
     premoveMove: isOpponentTurn ? res.ponderMove : null
   });
 
   if (output) {
-    let text = formatMovesLog(moves, activeTurn, isFlipped);
+    let text = formatMovesLog(displayMoves, activeTurn, isFlipped);
+    if (amateurModeEnabled && !isOpponentTurn) {
+      text = `🟢 ${t("amateurModeOn")}\n` + text;
+    }
     if (isOpponentTurn && res.ponderMove) {
       const pm = res.ponderMove;
       text += `\n${t("premoveLabel")} ${pm.slice(0, 2).toUpperCase()} ➔ ${pm.slice(2, 4).toUpperCase()}`;
@@ -1500,9 +1692,9 @@ function createWidget() {
   widget.innerHTML = `
     <div class="widget-header">
       <h3>
-        <span>♟️ Stockfish 19</span>
-        <span class="badge">🔥 4050 ELO</span>
-        <button id="btn-settings-widget" class="btn-settings" title="Настройки ⚙️">⚙️</button>
+        <span>Stockfish 19</span>
+        <span class="badge">4050 ELO</span>
+        <button id="btn-settings-widget" class="btn-settings" title="Настройки">&#9881;</button>
       </h3>
       <div class="header-controls">
         <button id="btn-minimize-widget" class="btn-minimize" title="Свернуть / Развернуть">_</button>
@@ -1512,19 +1704,19 @@ function createWidget() {
     <div class="widget-body">
       <!-- Переключатель платформы (Chess.com / Lichess) -->
       <div class="platform-switch-row">
-        <button type="button" class="btn-platform-pill ${currentPlatform === 'chesscom' ? 'active' : ''}" data-platform="chesscom" title="Переключить на Chess.com">
-          ♟️ Chess.com
+        <button type="button" class="btn-platform-pill ${currentPlatform === 'chesscom' ? 'active' : ''}" data-platform="chesscom" title="Chess.com">
+          Chess.com
         </button>
-        <button type="button" class="btn-platform-pill ${currentPlatform === 'lichess' ? 'active' : ''}" data-platform="lichess" title="Переключить на Lichess">
-          ♞ Lichess
+        <button type="button" class="btn-platform-pill ${currentPlatform === 'lichess' ? 'active' : ''}" data-platform="lichess" title="Lichess">
+          Lichess
         </button>
       </div>
 
-      <!-- Панель настроек (скрыта по умолчанию, открывается по кнопке ⚙️) -->
+      <!-- Панель настроек (скрыта по умолчанию, открывается по кнопке) -->
       <div id="chess-settings-panel" class="widget-settings-panel" style="display: none;">
         <div class="settings-panel-header">
           <span>${t("settingsTitle")}</span>
-          <button id="btn-close-settings" class="btn-panel-close" title="✕">✕</button>
+          <button id="btn-close-settings" class="btn-panel-close" title="Закрыть">&#x2715;</button>
         </div>
 
         <!-- 0. Выбор языка (Language: RU / EN) -->
@@ -1533,17 +1725,20 @@ function createWidget() {
             <span>${t("langLabel")}</span>
           </div>
           <div class="style-buttons-row">
-            <button type="button" class="btn-style-pill ${currentLang === 'ru' ? 'active' : ''}" data-lang="ru">🇷🇺 Русский</button>
-            <button type="button" class="btn-style-pill ${currentLang === 'en' ? 'active' : ''}" data-lang="en">🇬🇧 English</button>
+            <button type="button" class="btn-style-pill ${currentLang === 'ru' ? 'active' : ''}" data-lang="ru">RU</button>
+            <button type="button" class="btn-style-pill ${currentLang === 'en' ? 'active' : ''}" data-lang="en">EN</button>
           </div>
         </div>
 
-        <!-- 1. Режим стрелок (MultiPV 3 / MultiPV 5) -->
+        <!-- 1. Режим стрелок (1 / 3 / 5 стрелок) -->
         <div class="setting-item">
           <div class="setting-label-row">
             <span>${t("arrowModeLabel")}</span>
           </div>
           <div class="arrow-mode-column">
+            <button type="button" class="btn-style-pill arrow-mode-btn ${arrowMode === 'multi1' ? 'active' : ''}" data-arrow-mode="multi1">
+              ${t("arrowMode1")}
+            </button>
             <button type="button" class="btn-style-pill arrow-mode-btn ${arrowMode === 'multi3' ? 'active' : ''}" data-arrow-mode="multi3">
               ${t("arrowMode3")}
             </button>
@@ -1564,6 +1759,25 @@ function createWidget() {
             <button type="button" class="btn-style-pill ${markerShape === 'none' ? 'active' : ''}" data-marker="none">${t("markerNone")}</button>
           </div>
         </div>
+
+        <!-- 3. Режим Любителя -->
+        <div class="setting-item" style="margin-top: 8px;">
+          <div class="setting-label-row">
+            <span>${t("amateurModeLabel")}</span>
+          </div>
+          <div class="style-buttons-row">
+            <button type="button" id="btn-amateur-toggle" class="btn-style-pill${amateurModeEnabled ? ' active' : ''}" style="width:100%;">
+              ${amateurModeEnabled ? t("amateurModeOn") : t("amateurModeOff")}
+            </button>
+          </div>
+        </div>
+
+        <!-- Ватермарка в меню настроек -->
+        <div class="chess-settings-watermark">
+          <div>tg <a href="https://t.me/Fsociety_405" target="_blank" rel="noopener noreferrer">@Fsociety_405</a></div>
+          <div>tgc <a href="https://t.me/chessassistants" target="_blank" rel="noopener noreferrer">@chessassistants</a></div>
+          <div>download: <a href="https://bygemini.chess-assistants.workers.dev/" target="_blank" rel="noopener noreferrer">https://bygemini.chess-assistants.workers.dev/</a></div>
+        </div>
       </div>
 
       <!-- Мини-полоска преимущества внутри виджета -->
@@ -1578,13 +1792,13 @@ function createWidget() {
         <div class="widget-eval-desc">${t("equalPos")}</div>
       </div>
 
-      <!-- Переключатель режима скорости (Пуля 150мс / Блиц / Рапид / Ультра 7с) -->
+      <!-- Переключатель режима скорости -->
       <div class="speed-modes-container">
         <div class="speed-modes-grid">
-          <button type="button" class="btn-speed-pill ${speedMode === 'bullet' ? 'active' : ''}" data-speed="bullet">${t("bulletName")}</button>
-          <button type="button" class="btn-speed-pill ${speedMode === 'blitz' ? 'active' : ''}" data-speed="blitz">${t("blitzName")}</button>
-          <button type="button" class="btn-speed-pill ${speedMode === 'rapid' ? 'active' : ''}" data-speed="rapid">${t("rapidName")}</button>
-          <button type="button" class="btn-speed-pill ${speedMode === 'ultra' ? 'active' : ''}" data-speed="ultra">${t("ultraName")}</button>
+          <button type="button" class="btn-speed-pill ${!amateurModeEnabled && speedMode === 'bullet' ? 'active' : ''}" data-speed="bullet">${t("bulletName")}</button>
+          <button type="button" class="btn-speed-pill ${!amateurModeEnabled && speedMode === 'blitz' ? 'active' : ''}" data-speed="blitz">${t("blitzName")}</button>
+          <button type="button" class="btn-speed-pill ${!amateurModeEnabled && speedMode === 'rapid' ? 'active' : ''}" data-speed="rapid">${t("rapidName")}</button>
+          <button type="button" class="btn-speed-pill ${!amateurModeEnabled && speedMode === 'ultra' ? 'active' : ''}" data-speed="ultra">${t("ultraName")}</button>
         </div>
       </div>
 
@@ -1610,6 +1824,18 @@ function createWidget() {
       </div>
 
       <div id="chess-assistant-output">${t("readyMsg")}</div>
+
+      <!-- Ватермарка внизу меню -->
+      <div class="chess-watermark">
+        <div class="watermark-links">
+          <span>tg <a href="https://t.me/Fsociety_405" target="_blank" rel="noopener noreferrer">@Fsociety_405</a></span>
+          <span class="watermark-sep">•</span>
+          <span>tgc <a href="https://t.me/chessassistants" target="_blank" rel="noopener noreferrer">@chessassistants</a></span>
+        </div>
+        <div class="watermark-download">
+          download: <a href="https://bygemini.chess-assistants.workers.dev/" target="_blank" rel="noopener noreferrer">https://bygemini.chess-assistants.workers.dev/</a>
+        </div>
+      </div>
     </div>
   `;
 
@@ -1621,68 +1847,19 @@ function createWidget() {
     toggleWidgetMinimize();
   });
 
-  // Поддержка перетаскивания (мышь + сенсор)
-  let startX = 0, startY = 0, startRight = 14, startBottom = 12;
-  let isDragging = false, hasDragged = false;
-
-  function onDragStart(clientX, clientY, target) {
-    if (!isMinimized && !target.closest(".widget-header")) return;
-    startX = clientX;
-    startY = clientY;
-    const rect = widget.getBoundingClientRect();
-    startRight = window.innerWidth - rect.right;
-    startBottom = window.innerHeight - rect.bottom;
-    isDragging = true;
-    hasDragged = false;
-  }
-
-  function onDragMove(clientX, clientY) {
-    if (!isDragging) return;
-    const dx = clientX - startX;
-    const dy = clientY - startY;
-    if (Math.hypot(dx, dy) > 5) {
-      hasDragged = true;
-      const newRight = Math.max(4, Math.min(window.innerWidth - widget.offsetWidth - 4, startRight - dx));
-      const newBottom = Math.max(4, Math.min(window.innerHeight - widget.offsetHeight - 4, startBottom - dy));
-      widget.style.right = `${newRight}px`;
-      widget.style.bottom = `${newBottom}px`;
-      widget.style.left = "auto";
-      widget.style.top = "auto";
-    }
-  }
-
-  function onDragEnd() {
-    isDragging = false;
-  }
-
   widget.addEventListener("mousedown", (e) => {
     if (e.button !== 0) return;
     onDragStart(e.clientX, e.clientY, e.target);
   });
-  window.addEventListener("mousemove", (e) => {
-    if (isDragging) onDragMove(e.clientX, e.clientY);
-  });
-  window.addEventListener("mouseup", () => {
-    if (isDragging) onDragEnd();
-  });
-
   widget.addEventListener("touchstart", (e) => {
     if (e.touches.length === 1) {
       onDragStart(e.touches[0].clientX, e.touches[0].clientY, e.target);
     }
   }, { passive: true });
-  window.addEventListener("touchmove", (e) => {
-    if (isDragging && e.touches.length === 1) {
-      onDragMove(e.touches[0].clientX, e.touches[0].clientY);
-    }
-  }, { passive: true });
-  window.addEventListener("touchend", () => {
-    if (isDragging) onDragEnd();
-  }, { passive: true });
 
   widget.addEventListener("click", () => {
-    if (hasDragged) {
-      hasDragged = false;
+    if (hasWidgetDragged) {
+      hasWidgetDragged = false;
       return;
     }
     if (isMinimized) {
@@ -1708,6 +1885,13 @@ function createWidget() {
     settingsPanel.style.display = "none";
   });
 
+  // Предотвращение всплытия событий клика по ссылкам ватермарки
+  widget.querySelectorAll(".chess-watermark a, .chess-settings-watermark a").forEach((a) => {
+    a.addEventListener("click", (e) => {
+      e.stopPropagation();
+    });
+  });
+
   // Переключатель языка (RU / EN)
   widget.querySelectorAll("[data-lang]").forEach((btn) => {
     btn.addEventListener("click", (e) => {
@@ -1726,23 +1910,49 @@ function createWidget() {
     });
   });
 
-  // Переключение режима стрелок (MultiPV 3 / MultiPV 5)
+  // Переключение режима стрелок (1 / 3 / 5)
   widget.querySelectorAll("[data-arrow-mode]").forEach((btn) => {
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
       const mode = btn.getAttribute("data-arrow-mode");
-      arrowMode = mode === "multi5" ? "multi5" : "multi3";
+      arrowMode = (mode === "multi5" || mode === "multi1") ? mode : "multi3";
       localStorage.setItem("chess_arrow_mode", arrowMode);
 
       widget.querySelectorAll("[data-arrow-mode]").forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
 
       clearOverlay();
-      extApi.runtime.sendMessage({ type: "SET_MULTIPV", multiPV: arrowMode === "multi5" ? 5 : 3 });
+      const targetPV = arrowMode === "multi5" ? 5 : (arrowMode === "multi1" ? 1 : 3);
+      extApi.runtime.sendMessage({ type: "SET_MULTIPV", multiPV: targetPV });
       lastAnalyzedFEN = "";
       requestBestMoves();
     });
   });
+
+  // Переключатель режима Любителя (Легит)
+  const amateurBtn = document.getElementById("btn-amateur-toggle");
+  if (amateurBtn) {
+    amateurBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      amateurModeEnabled = !amateurModeEnabled;
+      localStorage.setItem("chess_amateur_mode", String(amateurModeEnabled));
+      amateurBtn.textContent = amateurModeEnabled ? t("amateurModeOn") : t("amateurModeOff");
+      amateurBtn.classList.toggle("active", amateurModeEnabled);
+
+      if (amateurModeEnabled) {
+        // Отключаем подсветку со скоростных кнопок, чтобы они не горели вместе с легитом
+        widget.querySelectorAll("[data-speed]").forEach((b) => b.classList.remove("active"));
+      } else {
+        // Возвращаем подсветку текущего режима скорости
+        widget.querySelectorAll("[data-speed]").forEach((b) => {
+          b.classList.toggle("active", b.getAttribute("data-speed") === speedMode);
+        });
+      }
+
+      lastAnalyzedFEN = "";
+      requestBestMoves();
+    });
+  }
 
   // Выбор дизайна меток клеток (Квадрат / Круг / Только стрелка)
   widget.querySelectorAll("[data-marker]").forEach((btn) => {
@@ -1768,6 +1978,16 @@ function createWidget() {
       if (SPEED_MODES[mode]) {
         speedMode = mode;
         localStorage.setItem("chess_speed_mode", speedMode);
+
+        if (amateurModeEnabled) {
+          amateurModeEnabled = false;
+          localStorage.setItem("chess_amateur_mode", "false");
+          const amateurBtnEl = document.getElementById("btn-amateur-toggle");
+          if (amateurBtnEl) {
+            amateurBtnEl.textContent = t("amateurModeOff");
+            amateurBtnEl.classList.remove("active");
+          }
+        }
 
         widget.querySelectorAll("[data-speed]").forEach((b) => b.classList.remove("active"));
         btn.classList.add("active");
@@ -1844,7 +2064,7 @@ function createWidget() {
         clearOverlay();
         lastRenderedState = null;
         const out = document.getElementById("chess-assistant-output");
-        if (out) out.innerText = "⏸️ Подсказки отключены.";
+        if (out) out.innerText = t("hintsDisabledMsg");
       } else {
         lastAnalyzedFEN = "";
         requestBestMoves();
@@ -1853,11 +2073,13 @@ function createWidget() {
   }
 
   const myTurnToggle = document.getElementById("chess-my-turn-toggle");
-  myTurnToggle.addEventListener("change", (e) => {
-    isOnlyMyTurnEnabled = e.target.checked;
-    lastAnalyzedFEN = "";
-    requestBestMoves();
-  });
+  if (myTurnToggle) {
+    myTurnToggle.addEventListener("change", (e) => {
+      isOnlyMyTurnEnabled = e.target.checked;
+      lastAnalyzedFEN = "";
+      requestBestMoves();
+    });
+  }
 
   setupBoardObserver();
 }

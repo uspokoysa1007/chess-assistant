@@ -95,6 +95,8 @@ console.log(`✅ dist/content/overlay.css сохранен (${cssMin.length} б�
 
 // 4. Загрузка обфускатора
 function getObfuscator() {
+  const localObf = path.join(ROOT_DIR, '../scripts/obfuscator.bundle.js');
+  if (fs.existsSync(localObf)) return require(localObf);
   const scratchBundle = 'C:/Users/fonya/.gemini/antigravity/brain/8ade855d-8452-4aa6-9764-aee78b8d5d0e/scratch/obfuscator.bundle.js';
   return require(scratchBundle);
 }
