@@ -2,12 +2,13 @@
 // Поддержка MultiPV (3 и 5 стрелок), фоновый премув, адаптеры платформ, SVG в Base64
 
 const extApi = typeof browser !== "undefined" ? browser : chrome;
-console.log("♟️ [Content Script] Шахматный Помощник загружен (Chess.com & Lichess)!");
+console.log("[Content Script] Шахматный Помощник загружен (Chess.com & Lichess)!");
 
 let boardObserver = null;
 let currentObservedBoard = null;
 let isAutoHintEnabled = true;
 let isOnlyMyTurnEnabled = true;
+let isPremovesEnabled = localStorage.getItem("chess_premoves_enabled") !== null ? localStorage.getItem("chess_premoves_enabled") === "true" : true;
 let isMinimized = false;
 let isUserInteractingWithBoard = false;
 let debounceTimer = null;
@@ -47,6 +48,7 @@ const TRANSLATIONS = {
     bulletNamePhone: "Пуля (50мс)",
     blitzNamePhone: "Блиц (100мс)",
     rapidNamePhone: "Рапид (150мс)",
+    premovesLabel: "Умные премувы",
     autoHintsLabel: "Стрелки после каждого хода",
     myTurnOnlyLabel: "Только мой ход",
     refreshBtn: "Обновить",
@@ -72,9 +74,14 @@ const TRANSLATIONS = {
     label2nd: "2-й",
     label3rd: "3-й",
     bestMovePhone: "Лучший ход:",
-    amateurModeLabel: "Легит-режим (80–85%):",
-    amateurModeOn: "🟢 Легит включён",
-    amateurModeOff: "⚪ Включить Легит"
+    amateurModeLabel: "Легит-режимы (Античит):",
+    legit1Title: "Легит 1 (~1750 ELO)",
+    legit1Desc: "~85% точность",
+    legit2Title: "Легит 2 (~1350 ELO)",
+    legit2Desc: "~75% точность",
+    legitDelayLabel: "Мышление легита:",
+    amateurModeOn: "Легит включён",
+    amateurModeOff: "Включить Легит"
   },
   en: {
     title: "Stockfish 19",
@@ -103,6 +110,7 @@ const TRANSLATIONS = {
     bulletNamePhone: "Bullet (50ms)",
     blitzNamePhone: "Blitz (100ms)",
     rapidNamePhone: "Rapid (150ms)",
+    premovesLabel: "Smart premoves",
     autoHintsLabel: "Arrows after each move",
     myTurnOnlyLabel: "My turn only",
     refreshBtn: "Refresh",
@@ -128,9 +136,14 @@ const TRANSLATIONS = {
     label2nd: "2nd",
     label3rd: "3rd",
     bestMovePhone: "Best move:",
-    amateurModeLabel: "Legit mode (80–85%):",
-    amateurModeOn: "🟢 Legit enabled",
-    amateurModeOff: "⚪ Enable Legit"
+    amateurModeLabel: "Anti-cheat Legit modes:",
+    legit1Title: "Legit 1 (~1750 ELO)",
+    legit1Desc: "~85% accuracy",
+    legit2Title: "Legit 2 (~1350 ELO)",
+    legit2Desc: "~75% accuracy",
+    legitDelayLabel: "Legit thinking time:",
+    amateurModeOn: "Legit enabled",
+    amateurModeOff: "Enable Legit"
   }
 };
 
@@ -165,63 +178,83 @@ let markerShape = localStorage.getItem("chess_marker_shape") || "square"; // "sq
 let speedMode = localStorage.getItem("chess_speed_mode") || "bullet"; // "bullet" | "blitz" | "rapid" | "ultra"
 
 // ==========================================
-// МОДУЛЬ «ЛЮБИТЕЛЬ» (Accuracy 80–85%)
+// 1.1. АНТИЧИТ ЛЕГИТ-МОДУЛИ
+// legit1: Клубный уровень (~1750 ELO, точность ~82–85%)
+// legit2: Любитель (~1350 ELO, точность ~72–75%)
 // ==========================================
-// Имитирует игру уровня CM/любителя: Stockfish иногда
-// намеренно выбирает не лучший ход, как живой игрок.
-let amateurModeEnabled = localStorage.getItem("chess_amateur_mode") === "true";
+let rawAmateurStorage = localStorage.getItem("chess_amateur_mode");
+let amateurMode = "off";
+if (rawAmateurStorage === "legit1" || rawAmateurStorage === "legit2") {
+  amateurMode = rawAmateurStorage;
+} else if (rawAmateurStorage === "true") {
+  amateurMode = "legit1"; // обратная совместимость
+}
+let amateurModeEnabled = amateurMode !== "off";
 
-const AMATEUR_CONFIG = {
-  // Вероятность сыграть ЛУЧШИЙ ход (остальное — случайный субоптимальный)
-  bestMoveProb: 0.72,
-  // Максимальный допустимый «ляп» в сантипешках (больше — не выбираем)
-  maxBlunderCp: 150,
-  // При мате или угрозе мата — всегда лучший ход
-  forceBestOnMate: true,
-  // Пониженная глубина (уровень сильного любителя ~1700–1900 ELO)
-  depth: 11,
-  // Задержка «раздумья» перед показом стрелки (мс): [min, max]
-  delayMs: [2000, 3000],
+// Настройка времени мышления / задержки для Легит-режимов
+// 50 мс, 250 мс, 500 мс, 1 с (1000), 2 с (2000), 3 с (3000), 5 с (5000)
+const VALID_LEGIT_DELAYS = ["50", "250", "500", "1000", "2000", "3000", "5000"];
+let rawDelayStorage = localStorage.getItem("chess_legit_delay");
+let legitDelay = VALID_LEGIT_DELAYS.includes(rawDelayStorage) ? rawDelayStorage : "1000";
+
+const AMATEUR_CONFIGS = {
+  legit1: {
+    name: "Легит 1 (~1750 ELO)",
+    bestMoveProb: 0.72,
+    maxBlunderCp: 120,
+    forceBestOnMate: true,
+    depth: 11,
+    delayMs: [1800, 2800],
+  },
+  legit2: {
+    name: "Легит 2 (~1350 ELO)",
+    bestMoveProb: 0.50,
+    maxBlunderCp: 220,
+    forceBestOnMate: true,
+    depth: 8,
+    delayMs: [1500, 3200],
+  }
 };
 
 /**
- * Выбирает ход в стиле любителя (точность ~80–85%).
- * @param {Array} moves — массив {move, score} от Stockfish (по убыванию качества: [0] = лучший)
+ * Выбирает ход в стиле живого человека (Легит 1 или Легит 2).
+ * @param {Array} moves — массив {move, score} от Stockfish
  * @returns {{move, score}} — выбранный ход
  */
 function amateurPickMove(moves) {
   if (!moves || moves.length === 0) return null;
   if (moves.length === 1) return moves[0];
 
+  const config = AMATEUR_CONFIGS[amateurMode] || AMATEUR_CONFIGS.legit1;
   const best = moves[0];
 
   // Всегда играем лучший ход при мате или угрозе мата
-  if (AMATEUR_CONFIG.forceBestOnMate) {
+  if (config.forceBestOnMate) {
     if (best.score?.type === "mate") return best;
-    // Если у лучшего хода огромный перевес (> 8 пешек) — позиция решена, не блундерим
+    // Если у лучшего хода огромный перевес (> 8 пешек) — позиция решена, не отдаём материал
     if (best.score?.type === "cp" && Math.abs(best.score.value) > 800) return best;
   }
 
   // Бросаем монетку: играем лучший ход или нет?
   const roll = Math.random();
-  if (roll < AMATEUR_CONFIG.bestMoveProb) return best;
+  if (roll < config.bestMoveProb) return best;
 
-  // Собираем «безопасные» субоптимальные ходы (не слишком плохие)
+  // Собираем «безопасные» субоптимальные ходы
   const bestCp = best.score?.type === "cp" ? best.score.value : 0;
   const candidates = moves.slice(1).filter((m) => {
     if (!m.score) return true;
-    if (m.score.type === "mate" && m.score.value < 0) return false; // ход ведёт к мату — исключаем
+    if (m.score.type === "mate" && m.score.value < 0) return false;
     if (m.score.type === "cp") {
       const diff = Math.abs(bestCp - m.score.value);
-      return diff <= AMATEUR_CONFIG.maxBlunderCp;
+      return diff <= config.maxBlunderCp;
     }
     return true;
   });
 
-  if (candidates.length === 0) return best; // нет безопасных альтернатив — лучший ход
+  if (candidates.length === 0) return best;
 
   // Взвешенный выбор: второй ход выбирается чаще, чем третий
-  const weights = candidates.map((_, i) => 1 / (i + 1.5));
+  const weights = candidates.map((_, i) => 1 / (i + 1.4));
   const totalW = weights.reduce((a, b) => a + b, 0);
   let r = Math.random() * totalW;
   for (let i = 0; i < candidates.length; i++) {
@@ -244,10 +277,10 @@ const MULTI5_COLOR = "#000000";
 const PREMOVE_COLOR = "#22c55e";
 
 const SPEED_MODES = {
-  bullet: { name: "⚡ Пуля", movetime: 150, depth: null, debounce: 50, label: "⚡ Пуля (150мс)" },
-  blitz:  { name: "🎯 Блиц", movetime: 500, depth: 11, debounce: 150, label: "🎯 Блиц (~0.5с)" },
-  rapid:  { name: "🧠 Рапид", movetime: null, depth: 14, debounce: 300, label: "🧠 Рапид" },
-  ultra:  { name: "👑 Ультра (7с)", movetime: 7000, depth: 26, debounce: 300, label: "👑 Ультра (7с • 26х)" }
+  bullet: { name: "Пуля", movetime: 150, depth: null, debounce: 50, label: "Пуля (150мс)" },
+  blitz:  { name: "Блиц", movetime: 500, depth: 11, debounce: 150, label: "Блиц (~0.5с)" },
+  rapid:  { name: "Рапид", movetime: null, depth: 14, debounce: 300, label: "Рапид" },
+  ultra:  { name: "Ультра (7с)", movetime: 7000, depth: 26, debounce: 300, label: "Ультра (7с • 26х)" }
 };
 
 // ==========================================
@@ -717,6 +750,286 @@ function detectTurn(board) {
 function parseBoardToFEN(board) {
   return getAdapter().parseBoardToFEN(board || getBoardElement());
 }
+
+// ==========================================
+// МИНИ-СИМУЛЯТОР ШАХМАТ ДЛЯ ПРОВЕРКИ ПРЕМУВОВ
+// ==========================================
+const PIECE_VALS = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 20000 };
+function getPieceValue(p) {
+  if (!p) return 0;
+  return PIECE_VALS[p.toLowerCase()] || 0;
+}
+
+class ChessSimulator {
+  constructor(fen) {
+    this.load(fen || "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+  }
+
+  load(fen) {
+    const parts = fen.trim().split(/\s+/);
+    this.board = Array(8).fill(null).map(() => Array(8).fill(null));
+    const rows = parts[0].split("/");
+    for (let r = 0; r < 8; r++) {
+      let f = 0;
+      for (const ch of rows[r]) {
+        if (/\d/.test(ch)) {
+          f += parseInt(ch, 10);
+        } else {
+          this.board[r][f] = ch;
+          f++;
+        }
+      }
+    }
+    this.turn = parts[1] || "w";
+    this.castling = parts[2] || "-";
+    this.ep = parts[3] || "-";
+    this.half = parseInt(parts[4] || "0", 10);
+    this.full = parseInt(parts[5] || "1", 10);
+  }
+
+  static sqToCoord(sq) {
+    if (!sq || sq.length < 2) return null;
+    const f = sq.charCodeAt(0) - 97;
+    const r = 8 - parseInt(sq[1], 10);
+    if (f < 0 || f > 7 || r < 0 || r > 7) return null;
+    return { r, f };
+  }
+
+  static coordToSq(r, f) {
+    return String.fromCharCode(97 + f) + (8 - r);
+  }
+
+  isPieceWhite(p) {
+    return p && p === p.toUpperCase();
+  }
+
+  getPiece(r, f) {
+    if (r < 0 || r > 7 || f < 0 || f > 7) return null;
+    return this.board[r][f];
+  }
+
+  isAttacked(targetR, targetF, byColor) {
+    const isByWhite = byColor === "w";
+
+    // 1. Пешки
+    const attackerPawnR = isByWhite ? targetR + 1 : targetR - 1;
+    const pawnChar = isByWhite ? "P" : "p";
+    if (attackerPawnR >= 0 && attackerPawnR < 8) {
+      if (targetF - 1 >= 0 && this.board[attackerPawnR][targetF - 1] === pawnChar) return true;
+      if (targetF + 1 < 8 && this.board[attackerPawnR][targetF + 1] === pawnChar) return true;
+    }
+
+    // 2. Кони
+    const knightChar = isByWhite ? "N" : "n";
+    const knightOffsets = [
+      [-2, -1], [-2, 1], [-1, -2], [-1, 2],
+      [1, -2], [1, 2], [2, -1], [2, 1]
+    ];
+    for (const [dr, df] of knightOffsets) {
+      const nr = targetR + dr;
+      const nf = targetF + df;
+      if (nr >= 0 && nr < 8 && nf >= 0 && nf < 8) {
+        if (this.board[nr][nf] === knightChar) return true;
+      }
+    }
+
+    // 3. Король
+    const kingChar = isByWhite ? "K" : "k";
+    for (let dr = -1; dr <= 1; dr++) {
+      for (let df = -1; df <= 1; df++) {
+        if (dr === 0 && df === 0) continue;
+        const nr = targetR + dr;
+        const nf = targetF + df;
+        if (nr >= 0 && nr < 8 && nf >= 0 && nf < 8) {
+          if (this.board[nr][nf] === kingChar) return true;
+        }
+      }
+    }
+
+    // 4. Диагонали (слоны, ферзи)
+    const diagDirs = [[-1, -1], [-1, 1], [1, -1], [1, 1]];
+    const bChar = isByWhite ? "B" : "b";
+    const qChar = isByWhite ? "Q" : "q";
+    for (const [dr, df] of diagDirs) {
+      let step = 1;
+      while (true) {
+        const nr = targetR + dr * step;
+        const nf = targetF + df * step;
+        if (nr < 0 || nr > 7 || nf < 0 || nf > 7) break;
+        const p = this.board[nr][nf];
+        if (p) {
+          if (p === bChar || p === qChar) return true;
+          break;
+        }
+        step++;
+      }
+    }
+
+    // 5. Линии (ладьи, ферзи)
+    const orthoDirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+    const rChar = isByWhite ? "R" : "r";
+    for (const [dr, df] of orthoDirs) {
+      let step = 1;
+      while (true) {
+        const nr = targetR + dr * step;
+        const nf = targetF + df * step;
+        if (nr < 0 || nr > 7 || nf < 0 || nf > 7) break;
+        const p = this.board[nr][nf];
+        if (p) {
+          if (p === rChar || p === qChar) return true;
+          break;
+        }
+        step++;
+      }
+    }
+
+    return false;
+  }
+
+  isCheck(color) {
+    const kingChar = color === "w" ? "K" : "k";
+    const oppColor = color === "w" ? "b" : "w";
+    let kr = -1, kf = -1;
+    for (let r = 0; r < 8; r++) {
+      for (let f = 0; f < 8; f++) {
+        if (this.board[r][f] === kingChar) {
+          kr = r; kf = f; break;
+        }
+      }
+      if (kr !== -1) break;
+    }
+    if (kr === -1) return false;
+    return this.isAttacked(kr, kf, oppColor);
+  }
+
+  makeMove(uci) {
+    if (!uci || uci.length < 4) return false;
+    const fromCoord = ChessSimulator.sqToCoord(uci.slice(0, 2));
+    const toCoord = ChessSimulator.sqToCoord(uci.slice(2, 4));
+    if (!fromCoord || !toCoord) return false;
+
+    const piece = this.board[fromCoord.r][fromCoord.f];
+    if (!piece) return false;
+
+    const isPieceWhite = this.isPieceWhite(piece);
+    if ((this.turn === "w") !== isPieceWhite) return false;
+
+    const movingColor = this.turn;
+    const opponentColor = movingColor === "w" ? "b" : "w";
+    const promo = uci[4] ? (isPieceWhite ? uci[4].toUpperCase() : uci[4].toLowerCase()) : null;
+
+    const savedTarget = this.board[toCoord.r][toCoord.f];
+
+    if (savedTarget && this.isPieceWhite(savedTarget) === isPieceWhite) {
+      return false;
+    }
+
+    this.board[fromCoord.r][fromCoord.f] = null;
+    let placedPiece = promo || piece;
+
+    let epCaptured = null;
+    let epCapturedPos = null;
+    if ((piece === "P" || piece === "p") && uci.slice(2, 4) === this.ep) {
+      const epR = isPieceWhite ? toCoord.r + 1 : toCoord.r - 1;
+      epCapturedPos = { r: epR, f: toCoord.f };
+      epCaptured = this.board[epR][toCoord.f];
+      this.board[epR][toCoord.f] = null;
+    }
+
+    let castlingRookFrom = null;
+    let castlingRookTo = null;
+    let castlingRookPiece = null;
+    if (piece === "K" && uci === "e1g1") {
+      castlingRookFrom = { r: 7, f: 7 }; castlingRookTo = { r: 7, f: 5 }; castlingRookPiece = "R";
+    } else if (piece === "K" && uci === "e1c1") {
+      castlingRookFrom = { r: 7, f: 0 }; castlingRookTo = { r: 7, f: 3 }; castlingRookPiece = "R";
+    } else if (piece === "k" && uci === "e8g8") {
+      castlingRookFrom = { r: 0, f: 7 }; castlingRookTo = { r: 0, f: 5 }; castlingRookPiece = "r";
+    } else if (piece === "k" && uci === "e8c8") {
+      castlingRookFrom = { r: 0, f: 0 }; castlingRookTo = { r: 0, f: 3 }; castlingRookPiece = "r";
+    }
+    if (castlingRookFrom) {
+      this.board[castlingRookFrom.r][castlingRookFrom.f] = null;
+      this.board[castlingRookTo.r][castlingRookTo.f] = castlingRookPiece;
+    }
+
+    this.board[toCoord.r][toCoord.f] = placedPiece;
+
+    if (this.isCheck(movingColor)) {
+      this.board[fromCoord.r][fromCoord.f] = piece;
+      this.board[toCoord.r][toCoord.f] = savedTarget;
+      if (epCapturedPos) this.board[epCapturedPos.r][epCapturedPos.f] = epCaptured;
+      if (castlingRookFrom) {
+        this.board[castlingRookFrom.r][castlingRookFrom.f] = castlingRookPiece;
+        this.board[castlingRookTo.r][castlingRookTo.f] = null;
+      }
+      return false;
+    }
+
+    if ((piece === "P" || piece === "p") && Math.abs(toCoord.r - fromCoord.r) === 2) {
+      const epR = (fromCoord.r + toCoord.r) / 2;
+      this.ep = ChessSimulator.coordToSq(epR, fromCoord.f);
+    } else {
+      this.ep = "-";
+    }
+
+    if (piece === "K") {
+      this.castling = this.castling.replace("K", "").replace("Q", "") || "-";
+    } else if (piece === "k") {
+      this.castling = this.castling.replace("k", "").replace("q", "") || "-";
+    } else if (piece === "R") {
+      if (fromCoord.r === 7 && fromCoord.f === 7) this.castling = this.castling.replace("K", "") || "-";
+      if (fromCoord.r === 7 && fromCoord.f === 0) this.castling = this.castling.replace("Q", "") || "-";
+    } else if (piece === "r") {
+      if (fromCoord.r === 0 && fromCoord.f === 7) this.castling = this.castling.replace("k", "") || "-";
+      if (fromCoord.r === 0 && fromCoord.f === 0) this.castling = this.castling.replace("q", "") || "-";
+    }
+
+    this.turn = opponentColor;
+    if (this.turn === "w") this.full++;
+    this.half = (piece === "P" || piece === "p" || savedTarget) ? 0 : this.half + 1;
+
+    return true;
+  }
+
+  toFEN() {
+    let str = "";
+    for (let r = 0; r < 8; r++) {
+      let empty = 0;
+      for (let f = 0; f < 8; f++) {
+        const p = this.board[r][f];
+        if (!p) {
+          empty++;
+        } else {
+          if (empty > 0) { str += empty; empty = 0; }
+          str += p;
+        }
+      }
+      if (empty > 0) str += empty;
+      if (r < 7) str += "/";
+    }
+    return `${str} ${this.turn} ${this.castling} ${this.ep} ${this.half} ${this.full}`;
+  }
+}
+
+function isPositionOutdated(fen, myColor) {
+  const liveBoard = getBoardElement();
+  if (!liveBoard) return true;
+  const liveFEN = parseBoardToFEN(liveBoard);
+  if (liveFEN && liveFEN !== fen) {
+    lastAnalyzedFEN = "";
+    requestBestMoves();
+    return true;
+  }
+  const liveTurn = detectTurn(liveBoard);
+  if (liveTurn === myColor) {
+    lastAnalyzedFEN = "";
+    requestBestMoves();
+    return true;
+  }
+  return false;
+}
+
 
 function setPlatform(platform) {
   if (platform !== "chesscom" && platform !== "lichess") return;
@@ -1451,59 +1764,175 @@ async function requestBestMoves() {
   const myColor = isFlipped ? "b" : "w";
   const isOpponentTurn = activeTurn !== myColor;
 
-  if (isOnlyMyTurnEnabled && isOpponentTurn) {
+  if (isOpponentTurn) {
+    // При выключенном тумблере премувов не запускаем фоновый расчёт веток премува во время хода соперника
+    if (!isPremovesEnabled) {
+      clearOverlay();
+      if (output) output.innerText = t("oppTurnWait");
+      return;
+    }
+
     clearOverlay();
     if (output) output.innerText = t("oppTurnPremove");
-    const res = await requestMovesFromBackground(fen, { movetime: 2000, depth: 16, multiPV: 1 });
 
-    // Проверяем: если противник УЖЕ походил, пока мы считали премув —
-    // отбрасываем старый премув и немедленно считаем наш ход!
-    const liveBoard = getBoardElement();
-    if (liveBoard) {
-      const liveFEN = parseBoardToFEN(liveBoard);
-      if (liveFEN && liveFEN !== fen) {
-        lastAnalyzedFEN = "";
-        requestBestMoves();
-        return;
+    // 1. Запрашиваем MultiPV 5 для текущей позиции соперника
+    const oppRes = await requestMovesFromBackground(fen, { movetime: 1800, depth: 14, multiPV: 5 });
+
+    if (isPositionOutdated(fen, myColor)) return;
+
+    const oppMoves = oppRes?.moves || [];
+    if (oppMoves.length === 0) {
+      if (output) output.innerText = t("oppTurnWait");
+      return;
+    }
+
+    // Кандидат на премув от 1-й линии соперника (ponder)
+    const candidatePremove = oppMoves[0].ponder;
+    if (!candidatePremove || candidatePremove.length < 4) {
+      if (output) output.innerText = t("oppTurnWait");
+      return;
+    }
+
+    // Оценка текущей позиции со стороны нашего игрока E_current
+    const bestOppScore = oppMoves[0].score;
+    const oppCp = bestOppScore?.type === "mate"
+      ? (bestOppScore.value > 0 ? 10000 : -10000)
+      : (bestOppScore?.value || 0);
+    // Наш перевес = -oppCp
+    const E_current = -oppCp;
+
+    // Фильтр: если текущая позиция уже в минусе (< 0.0), безопасный премув невозможен
+    if (E_current < 0) {
+      if (output) output.innerText = t("oppTurnWait");
+      return;
+    }
+
+    // 2. Двухэтапная проверка каждого из топ-3..5 ходов соперника
+    const branchesToCheck = oppMoves.slice(0, 5);
+    let worstAfterPremove = E_current;
+    let isPremoveSafe = true;
+
+    for (const opp of branchesToCheck) {
+      const sim = new ChessSimulator(fen);
+      const oppOk = sim.makeMove(opp.move);
+      if (!oppOk) continue;
+
+      const fromSq = candidatePremove.slice(0, 2);
+      const toSq = candidatePremove.slice(2, 4);
+      const fromCoord = ChessSimulator.sqToCoord(fromSq);
+      const toCoord = ChessSimulator.sqToCoord(toSq);
+      if (!fromCoord || !toCoord) { isPremoveSafe = false; break; }
+
+      const ourPiece = sim.getPiece(fromCoord.r, fromCoord.f);
+      if (!ourPiece) {
+        // Соперник срубил фигуру нашего премува
+        isPremoveSafe = false;
+        break;
       }
-      const liveTurn = detectTurn(liveBoard);
-      if (liveTurn === myColor) {
-        lastAnalyzedFEN = "";
-        requestBestMoves();
-        return;
+
+      const targetPieceBeforeOurMove = sim.getPiece(toCoord.r, toCoord.f);
+
+      const ourOk = sim.makeMove(candidatePremove);
+      if (!ourOk) {
+        // Нелегальный ход (шах, перекрытие и т.д.)
+        isPremoveSafe = false;
+        break;
+      }
+
+      // Критический фильтр против ловушек
+      const oppColor = myColor === "w" ? "b" : "w";
+      if (targetPieceBeforeOurMove) {
+        const ourVal = getPieceValue(ourPiece);
+        const targetVal = getPieceValue(targetPieceBeforeOurMove);
+        const isTargetProtectedByOpp = sim.isAttacked(toCoord.r, toCoord.f, oppColor);
+        if (isTargetProtectedByOpp && ourVal > targetVal) {
+          // Невыгодный размен (зевок старшей фигуры)
+          isPremoveSafe = false;
+          break;
+        }
+      }
+
+      // Оценка ветки со стороны игрока
+      let E_branch = E_current;
+      if (opp.ponder === candidatePremove) {
+        const bScore = opp.score;
+        const bCp = bScore?.type === "mate" ? (bScore.value > 0 ? 10000 : -10000) : (bScore?.value || 0);
+        E_branch = -bCp;
+      } else {
+        const branchFEN = sim.toFEN();
+        const branchRes = await requestMovesFromBackground(branchFEN, { movetime: 100, depth: 8, multiPV: 1 });
+        if (isPositionOutdated(fen, myColor)) return;
+        const bScore = branchRes?.moves[0]?.score;
+        if (bScore) {
+          const bCp = bScore.type === "mate" ? (bScore.value > 0 ? 10000 : -10000) : bScore.value;
+          E_branch = -bCp;
+        }
+      }
+
+      // Фильтр «без ухода в минус в любом случае»
+      if (E_branch < 0) {
+        isPremoveSafe = false;
+        break;
+      }
+
+      if (E_current - E_branch > 30) {
+        isPremoveSafe = false;
+        break;
+      }
+
+      if (E_branch < worstAfterPremove) {
+        worstAfterPremove = E_branch;
       }
     }
 
-    onAnalysisReceived(res, fen, true);
+    if (!isPremoveSafe || worstAfterPremove < 0 || (E_current - worstAfterPremove > 30)) {
+      clearOverlay();
+      if (output) output.innerText = t("oppTurnWait");
+      return;
+    }
+
+    // Все проверки пройдены: премув безопасен!
+    drawAllVisuals({ moves: [], premoveMove: candidatePremove });
+    if (output) {
+      const pm = candidatePremove;
+      const opp = oppMoves[0].move;
+      const oppNote = opp ? ` (${t("premoveOnOpp")} ${opp.slice(0, 2).toUpperCase()}➔${opp.slice(2, 4).toUpperCase()})` : "";
+      output.innerText = `${t("premoveLabel")} ${pm.slice(0, 2).toUpperCase()} ➔ ${pm.slice(2, 4).toUpperCase()}${oppNote}`;
+    }
     return;
   }
 
   let cfg = SPEED_MODES[speedMode] || SPEED_MODES.bullet;
   const turnName = activeTurn === "w" ? t("whiteGen") : t("blackGen");
 
-  // Легит-режим: пониженная глубина (depth 11) вместо любого speed-режима
+  // Легит-режимы: пониженная глубина и умная пауза
+  const curLegitConfig = AMATEUR_CONFIGS[amateurMode] || AMATEUR_CONFIGS.legit1;
+
   if (amateurModeEnabled) {
-    cfg = { ...cfg, depth: AMATEUR_CONFIG.depth, movetime: null };
+    cfg = { ...cfg, depth: curLegitConfig.depth, movetime: null };
     if (output) {
-      output.innerText = `🟢 ${t("amateurModeOn")} — ${t("searchingTurn")} (${turnName})... 🤔💭`;
+      output.innerText = `${curLegitConfig.name} — ${t("searchingTurn")} (${turnName})...`;
     }
   } else if (output) {
     if (speedMode === "ultra") {
-      output.innerText = `${t("ultraThinking")} (${turnName}, ~7s)... 🧠⏳`;
+      output.innerText = `${t("ultraThinking")} (${turnName}, ~7s)...`;
     } else {
-      output.innerText = `🔮 ${cfg.name} ${t("searchingTurn")} (${turnName})... ⚡💭`;
+      output.innerText = `${cfg.name} — ${t("searchingTurn")} (${turnName})...`;
     }
   }
 
+  const targetMultiPV = amateurModeEnabled ? 5 : (arrowMode === "multi5" ? 5 : (arrowMode === "multi3" ? 3 : 1));
   const res = await requestMovesFromBackground(fen, {
     ...cfg,
-    multiPV: arrowMode === "multi5" ? 5 : (arrowMode === "multi1" ? 1 : 3)
+    multiPV: targetMultiPV
   });
 
-  // Легит-режим: «человеческая пауза» перед показом стрелки (2–3 сек)
+  // Легит-режим: «человеческая пауза» (время раздумий) перед показом стрелки
   if (amateurModeEnabled && !isOpponentTurn) {
-    const [minD, maxD] = AMATEUR_CONFIG.delayMs;
-    const delay = minD + Math.random() * (maxD - minD);
+    const baseDelay = parseInt(legitDelay, 10) || 1000;
+    // Небольшой естественный разброс (±12%), чтобы время не выглядело роботизированным
+    const jitter = (Math.random() * 0.24 - 0.12) * baseDelay;
+    const delay = Math.max(15, Math.round(baseDelay + jitter));
     await new Promise(r => setTimeout(r, delay));
     if (!isAutoHintEnabled) {
       clearOverlay();
@@ -1571,7 +2000,7 @@ function onAnalysisReceived(res, fen, isOpponentTurn) {
 
   const currentFEN = parseBoardToFEN(board);
   if (fen && currentFEN && fen !== currentFEN) {
-    console.log("⏳ [Chess Assistant] Устаревший расчёт проигнорирован.");
+    console.log("[Chess Assistant] Устаревший расчёт проигнорирован.");
     if (currentFEN !== lastAnalyzedFEN && !isInteractingWithBoard(board)) {
       requestBestMoves();
     }
@@ -1603,7 +2032,7 @@ function onAnalysisReceived(res, fen, isOpponentTurn) {
     if (picked && picked.move !== moves[0].move) {
       // Перекладываем выбранный ход на первое место (остальные убираем из подсказки)
       displayMoves = [picked];
-      console.log(`🎭 [Любитель] Выбран ход: ${picked.move} (вместо лучшего ${moves[0].move})`);
+      console.log(`[Легит] Выбран ход: ${picked.move} (вместо лучшего ${moves[0].move})`);
     } else {
       displayMoves = [moves[0]]; // показываем только 1 стрелку в режиме любителя
     }
@@ -1641,7 +2070,7 @@ function onAnalysisReceived(res, fen, isOpponentTurn) {
   if (output) {
     let text = formatMovesLog(displayMoves, activeTurn, isFlipped);
     if (amateurModeEnabled && !isOpponentTurn) {
-      text = `🟢 ${t("amateurModeOn")}\n` + text;
+      text = `${t("amateurModeOn")}\n` + text;
     }
     if (isOpponentTurn && res.ponderMove) {
       const pm = res.ponderMove;
@@ -1806,24 +2235,39 @@ function createWidget() {
           </div>
         </div>
 
-        <!-- 3. Режим Любителя -->
+        <!-- 3. Античит Легит-режимы (Легит 1 и Легит 2) -->
         <div class="setting-item" style="margin-top: 8px;">
           <div class="setting-label-row">
             <span>${t("amateurModeLabel")}</span>
           </div>
-          <div class="style-buttons-row">
-            <button type="button" id="btn-amateur-toggle" class="btn-style-pill${amateurModeEnabled ? ' active' : ''}" style="width:100%;">
-              ${amateurModeEnabled ? t("amateurModeOn") : t("amateurModeOff")}
+          <div class="style-buttons-row" style="flex-direction: column; gap: 4px;">
+            <button type="button" class="btn-style-pill btn-legit-pill ${amateurMode === 'legit1' ? 'active' : ''}" data-legit="legit1" style="padding: 5px 8px; font-size: 10px; display: flex; justify-content: space-between; align-items: center;" title="Точность ~85% • Клубный уровень">
+              <span><b>${t("legit1Title")}</b></span>
+              <span style="opacity: 0.85; font-size: 9px;">${t("legit1Desc")}</span>
+            </button>
+            <button type="button" class="btn-style-pill btn-legit-pill ${amateurMode === 'legit2' ? 'active' : ''}" data-legit="legit2" style="padding: 5px 8px; font-size: 10px; display: flex; justify-content: space-between; align-items: center;" title="Точность ~75% • Безопасный любитель">
+              <span><b>${t("legit2Title")}</b></span>
+              <span style="opacity: 0.85; font-size: 9px;">${t("legit2Desc")}</span>
             </button>
           </div>
         </div>
 
-        <!-- Ватермарка в меню настроек -->
-        <div class="chess-settings-watermark">
-          <div>tg <a href="https://t.me/Fsociety_405" target="_blank" rel="noopener noreferrer">@Fsociety_405</a></div>
-          <div>tgc <a href="https://t.me/chessassistants" target="_blank" rel="noopener noreferrer">@chessassistants</a></div>
-          <div>download: <a href="https://bygemini.chess-assistants.workers.dev/" target="_blank" rel="noopener noreferrer">https://bygemini.chess-assistants.workers.dev/</a></div>
+        <!-- 4. Время раздумий (мышление) Легит-режима -->
+        <div class="setting-item" style="margin-top: 8px;">
+          <div class="setting-label-row">
+            <span>${t("legitDelayLabel")}</span>
+          </div>
+          <div class="legit-delay-row">
+            <button type="button" class="btn-style-pill btn-delay-pill ${legitDelay === '50' ? 'active' : ''}" data-delay="50" title="Задержка 50 мс">50 мс</button>
+            <button type="button" class="btn-style-pill btn-delay-pill ${legitDelay === '250' ? 'active' : ''}" data-delay="250" title="Задержка 250 мс">250 мс</button>
+            <button type="button" class="btn-style-pill btn-delay-pill ${legitDelay === '500' ? 'active' : ''}" data-delay="500" title="Задержка 500 мс">500 мс</button>
+            <button type="button" class="btn-style-pill btn-delay-pill ${legitDelay === '1000' ? 'active' : ''}" data-delay="1000" title="Задержка 1 с">1 с</button>
+            <button type="button" class="btn-style-pill btn-delay-pill ${legitDelay === '2000' ? 'active' : ''}" data-delay="2000" title="Задержка 2 с">2 с</button>
+            <button type="button" class="btn-style-pill btn-delay-pill ${legitDelay === '3000' ? 'active' : ''}" data-delay="3000" title="Задержка 3 с">3 с</button>
+            <button type="button" class="btn-style-pill btn-delay-pill ${legitDelay === '5000' ? 'active' : ''}" data-delay="5000" title="Задержка 5 с">5 с</button>
+          </div>
         </div>
+
       </div>
 
       <!-- Мини-полоска преимущества внутри виджета -->
@@ -1858,6 +2302,11 @@ function createWidget() {
         <span>${t("myTurnOnlyLabel")}</span>
       </label>
 
+      <label class="chess-toggle-label">
+        <input type="checkbox" id="chess-premoves-toggle" ${isPremovesEnabled ? "checked" : ""} />
+        <span>${t("premovesLabel")}</span>
+      </label>
+
       <div class="chess-controls-group">
         <div class="chess-row">
           <button id="btn-refresh-hints" class="primary" title="Обновить расчёт [R / К]">
@@ -1879,7 +2328,8 @@ function createWidget() {
           <span>tgc <a href="https://t.me/chessassistants" target="_blank" rel="noopener noreferrer">@chessassistants</a></span>
         </div>
         <div class="watermark-download">
-          download: <a href="https://bygemini.chess-assistants.workers.dev/" target="_blank" rel="noopener noreferrer">https://bygemini.chess-assistants.workers.dev/</a>
+          <div>download:</div>
+          <div><a href="https://bygemini.chess-assistants.workers.dev/" target="_blank" rel="noopener noreferrer">bygemini.chess-assistants.workers.dev</a></div>
         </div>
       </div>
     </div>
@@ -1946,7 +2396,7 @@ function createWidget() {
   });
 
   // Предотвращение всплытия событий клика по ссылкам ватермарки
-  widget.querySelectorAll(".chess-watermark a, .chess-settings-watermark a").forEach((a) => {
+  widget.querySelectorAll(".chess-watermark a").forEach((a) => {
     a.addEventListener("click", (e) => {
       e.stopPropagation();
     });
@@ -1989,30 +2439,52 @@ function createWidget() {
     });
   });
 
-  // Переключатель режима Любителя (Легит)
-  const amateurBtn = document.getElementById("btn-amateur-toggle");
-  if (amateurBtn) {
-    amateurBtn.addEventListener("click", (e) => {
+  // Переключатель режимов Легит (Легит 1 / Легит 2)
+  widget.querySelectorAll("[data-legit]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
       e.stopPropagation();
-      amateurModeEnabled = !amateurModeEnabled;
-      localStorage.setItem("chess_amateur_mode", String(amateurModeEnabled));
-      amateurBtn.textContent = amateurModeEnabled ? t("amateurModeOn") : t("amateurModeOff");
-      amateurBtn.classList.toggle("active", amateurModeEnabled);
-
-      if (amateurModeEnabled) {
-        // Отключаем подсветку со скоростных кнопок, чтобы они не горели вместе с легитом
-        widget.querySelectorAll("[data-speed]").forEach((b) => b.classList.remove("active"));
-      } else {
+      const chosen = btn.getAttribute("data-legit");
+      if (amateurMode === chosen) {
+        // Повторный клик выключает легит и возвращает обычный движок
+        amateurMode = "off";
+        amateurModeEnabled = false;
+        localStorage.setItem("chess_amateur_mode", "off");
+        widget.querySelectorAll("[data-legit]").forEach((b) => b.classList.remove("active"));
         // Возвращаем подсветку текущего режима скорости
         widget.querySelectorAll("[data-speed]").forEach((b) => {
           b.classList.toggle("active", b.getAttribute("data-speed") === speedMode);
         });
+      } else {
+        // Включение выбранного легит-режима (Легит 1 или Легит 2)
+        amateurMode = chosen;
+        amateurModeEnabled = true;
+        localStorage.setItem("chess_amateur_mode", amateurMode);
+        widget.querySelectorAll("[data-legit]").forEach((b) => {
+          b.classList.toggle("active", b.getAttribute("data-legit") === amateurMode);
+        });
+        // Отключаем подсветку со скоростных кнопок
+        widget.querySelectorAll("[data-speed]").forEach((b) => b.classList.remove("active"));
       }
 
       lastAnalyzedFEN = "";
       requestBestMoves();
     });
-  }
+  });
+
+  // Выбор времени мышления / задержки Легита
+  widget.querySelectorAll("[data-delay]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const val = btn.getAttribute("data-delay");
+      if (val) {
+        legitDelay = val;
+        localStorage.setItem("chess_legit_delay", legitDelay);
+        widget.querySelectorAll("[data-delay]").forEach((b) => {
+          b.classList.toggle("active", b.getAttribute("data-delay") === legitDelay);
+        });
+      }
+    });
+  });
 
   // Выбор дизайна меток клеток (Квадрат / Круг / Только стрелка)
   widget.querySelectorAll("[data-marker]").forEach((btn) => {
@@ -2040,13 +2512,10 @@ function createWidget() {
         localStorage.setItem("chess_speed_mode", speedMode);
 
         if (amateurModeEnabled) {
+          amateurMode = "off";
           amateurModeEnabled = false;
-          localStorage.setItem("chess_amateur_mode", "false");
-          const amateurBtnEl = document.getElementById("btn-amateur-toggle");
-          if (amateurBtnEl) {
-            amateurBtnEl.textContent = t("amateurModeOff");
-            amateurBtnEl.classList.remove("active");
-          }
+          localStorage.setItem("chess_amateur_mode", "off");
+          widget.querySelectorAll("[data-legit]").forEach((b) => b.classList.remove("active"));
         }
 
         widget.querySelectorAll("[data-speed]").forEach((b) => b.classList.remove("active"));

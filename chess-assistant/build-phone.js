@@ -99,120 +99,71 @@ const manifest = {
 
 fs.writeFileSync(path.join(PHONE_DIR, 'manifest.json'), escapeAndMinifyJson(manifest), 'utf8');
 
-// 4. overlay.css (без тяжелых блюров backdrop-filter для плавных 60-120 FPS на мобилках)
+// 4. overlay.css: чистый единый набор правил без дублирования десктопных блоков
 let css = fs.readFileSync(path.join(SRC_DIR, 'content/overlay.css'), 'utf8');
 css = css.replace(/backdrop-filter:\s*blur\([^)]*\);?/gi, '');
 css = css.replace(/-webkit-backdrop-filter:\s*blur\([^)]*\);?/gi, '');
-css = css.replace(/background:\s*rgba\(20,\s*16,\s*28,\s*0\.96\);?/gi, 'background: #151020;');
 
-const mobileCssRules = `
-/* Позиционирование доски на мобильных (Chess.com) */
-wc-chess-board, chess-board, .board-layout-chessboard, #board-single, .board-component {
-  position: relative !important;
-}
+css = css.replace(
+  /#chess-canvas-overlay\{[^}]+\}/,
+  '#chess-canvas-overlay{position:absolute!important;top:0!important;left:0!important;width:100%!important;height:100%!important;pointer-events:none!important;z-index:9999!important;background:transparent!important;transform:translateZ(0)!important;will-change:transform!important}'
+);
 
-#chess-canvas-overlay {
-  position: absolute !important;
-  top: 0 !important;
-  left: 0 !important;
-  width: 100% !important;
-  height: 100% !important;
-  pointer-events: none !important;
-  z-index: 9999 !important;
-  background: transparent !important;
-  transform: translateZ(0) !important;
-  will-change: transform !important;
-}
+css = css.replace(
+  /#chess-assistant-widget\{[^}]+position:fixed;bottom:12px;[^}]+\}/,
+  '#chess-assistant-widget{--theme-color:#7c3aed;--theme-glow:rgba(124,58,237,0.2);--theme-header:#a78bfa;--theme-badge-bg:rgba(124,58,237,0.15);--theme-badge-border:rgba(124,58,237,0.35);--theme-badge-text:#c4b5fd;--theme-btn-primary:linear-gradient(135deg,#7c3aed,#5b21b6);position:fixed;background:#151020!important;bottom:max(10px,env(safe-area-inset-bottom,10px))!important;right:max(10px,env(safe-area-inset-right,10px))!important;width:min(320px,calc(100vw - 20px))!important;max-height:min(75vh,calc(100dvh - 70px))!important;box-sizing:border-box!important;padding:8px 10px!important;border-radius:14px!important;touch-action:pan-y!important;z-index:10000000!important;box-shadow:0 4px 16px rgba(0,0,0,0.7)!important;color:#e2d9f3;border:1px solid #3a2660;font-family:-apple-system,BlinkMacSystemFont,\"Segoe UI\",Roboto,sans-serif;user-select:none;transition:all 0.2s ease;overflow-y:auto;overflow-x:hidden;scrollbar-width:thin;scrollbar-color:#2e1f4a #080510}'
+);
 
-#chess-assistant-widget {
-  background: #151020 !important;
-  bottom: max(10px, env(safe-area-inset-bottom, 10px)) !important;
-  right: max(10px, env(safe-area-inset-right, 10px)) !important;
-  width: min(320px, calc(100vw - 20px)) !important;
-  max-height: min(75vh, calc(100dvh - 70px)) !important;
-  box-sizing: border-box !important;
-  padding: 8px 10px !important;
-  border-radius: 14px !important;
-  touch-action: pan-y !important;
-  z-index: 10000000 !important;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.7) !important;
-}
+css = css.replace(
+  /#chess-assistant-widget\.minimized\{[^}]+\}/,
+  '#chess-assistant-widget.minimized{width:auto!important;max-width:calc(100vw - 20px)!important;padding:6px 14px!important;border-radius:20px!important;cursor:pointer!important;touch-action:none!important;box-shadow:0 4px 16px rgba(168,85,247,0.4),0 2px 8px rgba(0,0,0,0.8)!important}'
+);
 
-#chess-assistant-widget.minimized {
-  width: auto !important;
-  max-width: calc(100vw - 20px) !important;
-  padding: 6px 14px !important;
-  border-radius: 20px !important;
-  cursor: pointer !important;
-  touch-action: none !important;
-  box-shadow: 0 4px 16px rgba(168, 85, 247, 0.4), 0 2px 8px rgba(0, 0, 0, 0.8) !important;
-}
+css = css.replace(
+  /\.widget-drag-handle\{[^}]+\}/,
+  '.widget-drag-handle{width:44px!important;height:5px!important;background:rgba(196,181,253,0.45)!important;border-radius:3px!important;margin:0 auto 6px auto!important;cursor:grab!important;touch-action:none!important}'
+);
 
-.widget-drag-handle {
-  width: 44px !important;
-  height: 5px !important;
-  background: rgba(196, 181, 253, 0.45) !important;
-  border-radius: 3px !important;
-  margin: 0 auto 6px auto !important;
-  cursor: grab !important;
-  touch-action: none !important;
-}
+css = css.replace(
+  /\.widget-drag-handle:active\{[^}]+\}/,
+  '.widget-drag-handle:active{cursor:grabbing!important;background:rgba(196,181,253,0.75)!important}'
+);
 
-.widget-drag-handle:active {
-  cursor: grabbing !important;
-  background: rgba(196, 181, 253, 0.75) !important;
-}
+css = css.replace(
+  /\.widget-header\{display:flex;align-items:center;justify-content:space-between;margin-bottom:5px;cursor:grab\}/,
+  '.widget-header,.settings-panel-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:5px;cursor:grab!important;touch-action:none!important}'
+);
 
-.widget-header,
-.settings-panel-header {
-  touch-action: none !important;
-  cursor: grab !important;
-}
+css = css.replace(
+  /\.widget-header:active\{cursor:grabbing\}/,
+  '.widget-header:active,.settings-panel-header:active{cursor:grabbing!important}'
+);
 
-.widget-header:active,
-.settings-panel-header:active {
-  cursor: grabbing !important;
-}
+css = css.replace(
+  /\.speed-modes-grid\{[^}]+\}/,
+  '.speed-modes-grid{display:grid!important;grid-template-columns:repeat(3,1fr)!important;gap:4px!important}'
+);
 
-.speed-modes-grid {
-  display: grid !important;
-  grid-template-columns: repeat(3, 1fr) !important;
-  gap: 4px !important;
-}
+css = css.replace(
+  /#chess-assistant-widget button\{background:#100b1e;color:#c4b5fd;border:1px solid #2e1f4a;border-radius:5px;padding:5px 8px;cursor:pointer;font-size:10.5px;font-weight:500;transition:all 0.15s ease;flex:1\}/,
+  '#chess-assistant-widget button,.btn-speed-pill,.btn-style-pill{min-height:36px!important;display:flex!important;align-items:center!important;justify-content:center!important;font-size:11px!important;touch-action:manipulation!important;box-sizing:border-box!important;background:#100b1e;color:#c4b5fd;border:1px solid #2e1f4a;border-radius:5px;cursor:pointer;font-weight:500;transition:all 0.15s ease;flex:1}'
+);
 
-#chess-assistant-widget button,
-.btn-speed-pill,
-.btn-style-pill {
-  min-height: 36px !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  font-size: 11px !important;
-  touch-action: manipulation !important;
-  box-sizing: border-box !important;
-}
+css = css.replace(
+  /\.btn-settings\{[^}]+\}/,
+  '.btn-settings,.btn-minimize,.btn-panel-close{min-width:28px!important;min-height:28px!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;background:rgba(255,255,255,0.05)!important;border:1px solid rgba(255,255,255,0.1)!important;color:#c4b5fd!important;font-size:12px!important;cursor:pointer!important;border-radius:4px!important;line-height:1!important;transition:all 0.2s ease!important}'
+);
 
-.btn-minimize, .btn-settings, .btn-panel-close {
-  min-width: 28px !important;
-  min-height: 28px !important;
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-}
+css = css.replace(
+  /\.chess-toggle-label\{[^}]+\}/,
+  '.chess-toggle-label{padding:5px 0!important;font-size:11.5px!important;touch-action:manipulation!important;color:#9d87c4;display:flex;align-items:center;gap:6px;cursor:pointer;margin-bottom:4px;white-space:nowrap}'
+);
 
-.chess-toggle-label {
-  padding: 5px 0 !important;
-  font-size: 11.5px !important;
-  touch-action: manipulation !important;
-}
+css = css.replace(
+  /\.chess-toggle-label input\[type="checkbox"\]\{[^}]+\}/,
+  '.chess-toggle-label input[type="checkbox"]{cursor:pointer;accent-color:var(--theme-color);width:17px!important;height:17px!important}'
+);
 
-.chess-toggle-label input[type="checkbox"] {
-  width: 17px !important;
-  height: 17px !important;
-}
-`;
-
-css += '\n' + mobileCssRules;
 const cssMin = css
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .replace(/\s+/g, ' ')
@@ -262,9 +213,9 @@ bgCode = bgCode.replace(
 let contentCode = fs.readFileSync(path.join(SRC_DIR, 'content/content.js'), 'utf8');
 
 const newSpeedModes = `const SPEED_MODES = {
-  bullet: { name: "⚡ Пуля", movetime: 50, depth: 8, debounce: 80, label: "⚡ Пуля (50мс • 8d)" },
-  blitz:  { name: "🎯 Блиц", movetime: 100, depth: 9, debounce: 100, label: "🎯 Блиц (100мс • 9d)" },
-  rapid:  { name: "🧠 Рапид", movetime: 150, depth: 11, debounce: 120, label: "🧠 Рапид (150мс • 11d)" }
+  bullet: { name: "Пуля", movetime: 50, depth: 8, debounce: 80, label: "Пуля (50мс • 8d)" },
+  blitz:  { name: "Блиц", movetime: 100, depth: 9, debounce: 100, label: "Блиц (100мс • 9d)" },
+  rapid:  { name: "Рапид", movetime: 150, depth: 11, debounce: 120, label: "Рапид (150мс • 11d)" }
 };`;
 
 contentCode = contentCode.replace(
@@ -305,9 +256,18 @@ contentCode = contentCode.replace(
   'let arrowMode = "multi1";'
 );
 
-// Отрисовка ровно 1 стрелки
+// Отрисовка ровно 1 стрелки (или стрелки безопасного премува)
 const singleArrowDrawBlock = `  // 1 лучшая стрелка (максимальная скорость и чистота экрана на телефоне)
-  if (validMoves.length > 0) {
+  if (hasPremove) {
+    const pStart = getSquareBox(premoveMove.slice(0, 2), squareSize, dpr, isFlipped);
+    const pEnd = getSquareBox(premoveMove.slice(2, 4), squareSize, dpr, isFlipped);
+    const premoveColor = "#7c3aed";
+
+    drawSquareMarker(ctx, pStart, premoveColor, dpr);
+    drawSquareMarker(ctx, pEnd, premoveColor, dpr);
+    drawArrow(ctx, pStart, pEnd, premoveColor, dpr);
+    drawBadge(ctx, pEnd, null, premoveColor, dpr, "top-center", 0);
+  } else if (validMoves.length > 0) {
     const best = validMoves[0];
     const start = getSquareBox(best.move.slice(0, 2), squareSize, dpr, isFlipped);
     const end = getSquareBox(best.move.slice(2, 4), squareSize, dpr, isFlipped);
@@ -324,11 +284,12 @@ contentCode = contentCode.replace(
   `hasOverlayDrawings = true;\n\n${singleArrowDrawBlock}\n}\n\n// ==========================================\n// 4. Поворот экрана и ресайз (Исправление бага!)\n// ==========================================\nfunction handleResizeOrOrientation()`
 );
 
-// Компактный вывод в лог (1 лучший ход)
+// Компактный вывод в лог (1 лучший ход с объявлением myColor!)
 contentCode = contentCode.replace(
   /function formatMovesLog\([\s\S]*?return moves\.slice\(0, 3\)[\s\S]*?join\("\\n"\);\s*\}/,
   `function formatMovesLog(moves, activeTurn, isFlipped) {
   if (!moves || moves.length === 0) return t("noMovesMsg");
+  const myColor = isFlipped ? "b" : "w";
   const m = moves[0];
   const s = formatScore(m.score, "M");
   const who = (score) => {
@@ -362,7 +323,7 @@ contentCode = contentCode.replace(
 // Заголовок и бейдж
 contentCode = contentCode.replace(
   /<span>Stockfish 19<\/span>\s*<span class="badge">4050 ELO<\/span>/,
-  '<span>♟️ \${t("titlePhone")}</span>\n        <span class="badge">⚡ 3650 ELO</span>'
+  '<span>\${t("titlePhone")}</span>\n        <span class="badge">3650 ELO</span>'
 );
 
 // Свернут по умолчанию в аккуратную плавающую кнопку
@@ -391,28 +352,14 @@ contentCode = contentCode.replace(
   'let speedMode = localStorage.getItem("chess_speed_mode") || "rapid";\nif (speedMode === "ultra") speedMode = "rapid";'
 );
 
-// Отключение премувов на телефоне для экономии батареи
+// multiPV на телефоне: 5 при включенном легит-режиме, иначе 1 (для скорости)
 contentCode = contentCode.replace(
-  /if \(isOnlyMyTurnEnabled && isOpponentTurn\) \{[\s\S]*?onAnalysisReceived\(res, fen, true\);\s*return;\s*\}/,
-  `if (isOpponentTurn) {
-    clearOverlay();
-    if (output) output.innerText = "⏳ " + t("oppTurnWait");
-    return;
-  }`
+  /const targetMultiPV = amateurModeEnabled \? 5 : \(arrowMode === "multi5" \? 5 : \(arrowMode === "multi3" \? 3 : 1\)\);/g,
+  'const targetMultiPV = amateurModeEnabled ? 5 : 1;'
 );
 contentCode = contentCode.replace(
-  /const hasPremove = premoveMove && premoveMove\.length >= 4;/g,
-  'const hasPremove = false;'
-);
-
-// multiPV: 1
-contentCode = contentCode.replace(
-  /multiPV:\s*cfg\.multiPV\s*\|\|\s*\(arrowMode === "multi5" \? 5 : \(arrowMode === "multi1" \? 1 : 3\)\)/g,
-  'multiPV: 1'
-);
-contentCode = contentCode.replace(
-  /multiPV:\s*arrowMode === "multi5" \? 5 : \(arrowMode === "multi1" \? 1 : 3\)/g,
-  'multiPV: 1'
+  /const targetMultiPV = cfg\.multiPV \|\| \(amateurModeEnabled \? 5 : \(arrowMode === "multi5" \? 5 : \(arrowMode === "multi3" \? 3 : 1\)\)\);/g,
+  'const targetMultiPV = cfg.multiPV || (amateurModeEnabled ? 5 : 1);'
 );
 
 // Оптимизация поворота экрана и динамического ресайза доски (ResizeObserver)

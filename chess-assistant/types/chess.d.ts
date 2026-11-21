@@ -20,6 +20,12 @@ export type MarkerStyle = "square" | "circle" | "none";
 /** Контроль времени и скорость расчёта движка */
 export type SpeedMode = "bullet" | "blitz" | "rapid" | "ultra";
 
+/** Режим легитной игры (античит): выкл, легит 1 (~1750 ELO), легит 2 (~1350 ELO) */
+export type LegitMode = "off" | "legit1" | "legit2";
+
+/** Время мышления легит-режима: 50 мс, 250 мс, 500 мс, 1 с, 2 с, 3 с, 5 с */
+export type LegitDelay = "50" | "250" | "500" | "1000" | "2000" | "3000" | "5000";
+
 /** Оценка позиции от Stockfish */
 export interface EvaluationScore {
   /** 'cp' - пешечный перевес в сантипешках (100 = 1 пешка), 'mate' - мат в N ходов */
@@ -46,6 +52,15 @@ export interface VisualsState {
   moves: ChessMoveAnalysis[];
   /** Ход соперника для премува (если есть) */
   premoveMove?: string | null;
+}
+
+/** Результат двухэтапной валидации безопасного премува */
+export interface SafePremoveResult {
+  safe: boolean;
+  premoveMove?: string | null;
+  currentScore?: number | null;
+  worstScore?: number | null;
+  reason?: string;
 }
 
 /** Сообщение для общения между content.js и background.js */
