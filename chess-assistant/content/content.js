@@ -1306,15 +1306,45 @@ let isWidgetDragging = false, hasWidgetDragged = false;
 
 function onDragStart(clientX, clientY, target) {
   const widget = document.getElementById("chess-assistant-widget");
-  if (!widget) return;
-  if (!isMinimized && !target.closest(".widget-header")) return;
-  startX = clientX;
-  startY = clientY;
+  if (!widget) return false;
+
+  // Не начинаем перетаскивание при клике на интерактивные кнопки, ссылки, поля ввода и чекбоксы
+  if (target && target.closest && target.closest("button, input, a, select, textarea, label, .btn-speed-pill, .btn-style-pill, .btn-platform-pill")) {
+    return false;
+  }
+
+  // Если виджет свернут в кнопку — разрешено тащить за любую точку
+  if (isMinimized) {
+    startX = clientX;
+    startY = clientY;
+    const rect = widget.getBoundingClientRect();
+    startRight = window.innerWidth - rect.right;
+    startBottom = window.innerHeight - rect.bottom;
+    isWidgetDragging = true;
+    hasWidgetDragged = false;
+    return true;
+  }
+
+  // Если меню открыто:
+  // Разрешаем тащить за ручку перетаскивания (.widget-drag-handle),
+  // заголовок (.widget-header), шапку настроек (.settings-panel-header)
+  // или верхнюю область виджета (первые 42px)
+  const isHeader = target && target.closest && target.closest(".widget-header, .settings-panel-header, .widget-drag-handle");
   const rect = widget.getBoundingClientRect();
-  startRight = window.innerWidth - rect.right;
-  startBottom = window.innerHeight - rect.bottom;
-  isWidgetDragging = true;
-  hasWidgetDragged = false;
+  const isTopZone = (clientY - rect.top < 42) &&
+                    !(target && target.closest && target.closest("#chess-assistant-output, .chess-watermark, .platform-switch-row, .speed-modes-grid, .chess-controls-group"));
+
+  if (isHeader || isTopZone) {
+    startX = clientX;
+    startY = clientY;
+    startRight = window.innerWidth - rect.right;
+    startBottom = window.innerHeight - rect.bottom;
+    isWidgetDragging = true;
+    hasWidgetDragged = false;
+    return true;
+  }
+
+  return false;
 }
 
 function onDragMove(clientX, clientY) {
@@ -1323,10 +1353,12 @@ function onDragMove(clientX, clientY) {
   if (!widget) return;
   const dx = clientX - startX;
   const dy = clientY - startY;
-  if (Math.hypot(dx, dy) > 5) {
+  if (Math.hypot(dx, dy) > 4) {
     hasWidgetDragged = true;
-    const newRight = Math.max(4, Math.min(window.innerWidth - widget.offsetWidth - 4, startRight - dx));
-    const newBottom = Math.max(4, Math.min(window.innerHeight - widget.offsetHeight - 4, startBottom - dy));
+    const maxRight = Math.max(0, window.innerWidth - widget.offsetWidth - 4);
+    const maxBottom = Math.max(0, window.innerHeight - widget.offsetHeight - 4);
+    const newRight = Math.max(4, Math.min(maxRight, startRight - dx));
+    const newBottom = Math.max(4, Math.min(maxBottom, startBottom - dy));
     widget.style.right = `${newRight}px`;
     widget.style.bottom = `${newBottom}px`;
     widget.style.left = "auto";
@@ -1335,6 +1367,15 @@ function onDragMove(clientX, clientY) {
 }
 
 function onDragEnd() {
+  if (isWidgetDragging && hasWidgetDragged) {
+    const widget = document.getElementById("chess-assistant-widget");
+    if (widget) {
+      try {
+        localStorage.setItem("chess_widget_pos_r", widget.style.right);
+        localStorage.setItem("chess_widget_pos_b", widget.style.bottom);
+      } catch (err) {}
+    }
+  }
   isWidgetDragging = false;
 }
 
@@ -1346,10 +1387,14 @@ window.addEventListener("mouseup", () => {
 });
 window.addEventListener("touchmove", (e) => {
   if (isWidgetDragging && e.touches.length === 1) {
+    if (e.cancelable) e.preventDefault(); // Останавливаем скролл страницы на телефоне во время перетаскивания
     onDragMove(e.touches[0].clientX, e.touches[0].clientY);
   }
-}, { passive: true });
+}, { passive: false });
 window.addEventListener("touchend", () => {
+  if (isWidgetDragging) onDragEnd();
+}, { passive: true });
+window.addEventListener("touchcancel", () => {
   if (isWidgetDragging) onDragEnd();
 }, { passive: true });
 
@@ -1690,6 +1735,7 @@ function createWidget() {
   const widget = document.createElement("div");
   widget.id = "chess-assistant-widget";
   widget.innerHTML = `
+    <div class="widget-drag-handle" title="Потяни, чтобы переместить"></div>
     <div class="widget-header">
       <h3>
         <span>Stockfish 19</span>
@@ -1814,10 +1860,10 @@ function createWidget() {
 
       <div class="chess-controls-group">
         <div class="chess-row">
-          <button id="btn-refresh-hints" class="primary">
+          <button id="btn-refresh-hints" class="primary" title="Обновить расчёт [R / К]">
             ${t("refreshBtn")}
           </button>
-          <button id="btn-toggle-hints" class="btn-toggle-hints">
+          <button id="btn-toggle-hints" class="btn-toggle-hints" title="Скрыть / показать стрелки [H / Р]">
             ${isAutoHintEnabled ? t("disableBtn") : t("enableBtn")}
           </button>
         </div>
@@ -1839,6 +1885,17 @@ function createWidget() {
     </div>
   `;
 
+  try {
+    const savedR = localStorage.getItem("chess_widget_pos_r");
+    const savedB = localStorage.getItem("chess_widget_pos_b");
+    if (savedR && savedB) {
+      widget.style.right = savedR;
+      widget.style.bottom = savedB;
+      widget.style.left = "auto";
+      widget.style.top = "auto";
+    }
+  } catch (err) {}
+
   document.body.appendChild(widget);
 
   const minBtn = document.getElementById("btn-minimize-widget");
@@ -1853,9 +1910,12 @@ function createWidget() {
   });
   widget.addEventListener("touchstart", (e) => {
     if (e.touches.length === 1) {
-      onDragStart(e.touches[0].clientX, e.touches[0].clientY, e.target);
+      const ok = onDragStart(e.touches[0].clientX, e.touches[0].clientY, e.target);
+      if (ok && e.cancelable) {
+        e.preventDefault();
+      }
     }
-  }, { passive: true });
+  }, { passive: false });
 
   widget.addEventListener("click", () => {
     if (hasWidgetDragged) {
@@ -2003,56 +2063,65 @@ function createWidget() {
   const autoToggle = document.getElementById("chess-auto-toggle");
 
   function updateToggleHintsUI() {
-    if (toggleHintsBtn) {
+    const toggleBtn = document.getElementById("btn-toggle-hints");
+    const autoTog = document.getElementById("chess-auto-toggle");
+    if (toggleBtn) {
       if (isAutoHintEnabled) {
-        toggleHintsBtn.innerText = t("disableBtn");
-        toggleHintsBtn.classList.remove("hints-off");
+        toggleBtn.innerText = t("disableBtn");
+        toggleBtn.classList.remove("hints-off");
       } else {
-        toggleHintsBtn.innerText = t("enableBtn");
-        toggleHintsBtn.classList.add("hints-off");
+        toggleBtn.innerText = t("enableBtn");
+        toggleBtn.classList.add("hints-off");
       }
     }
-    if (autoToggle) {
-      autoToggle.checked = isAutoHintEnabled;
+    if (autoTog) {
+      autoTog.checked = isAutoHintEnabled;
     }
   }
 
-  if (refreshHintsBtn) {
-    refreshHintsBtn.addEventListener("click", () => {
-      const board = getBoardElement();
-      const out = document.getElementById("chess-assistant-output");
+  function refreshHints() {
+    const board = getBoardElement();
+    const out = document.getElementById("chess-assistant-output");
+    clearOverlay();
+    lastRenderedState = null;
+    lastAnalyzedFEN = "";
+    clearTimeout(debounceTimer);
+    resetGameTracking();
+
+    if (!board) {
+      if (out) out.innerText = t("boardNotFoundWarn");
+      return;
+    }
+
+    if (out) out.innerText = t("refreshingMsg");
+    requestBestMoves();
+  }
+
+  function toggleHints() {
+    isAutoHintEnabled = !isAutoHintEnabled;
+    updateToggleHintsUI();
+    const out = document.getElementById("chess-assistant-output");
+    if (!isAutoHintEnabled) {
+      clearTimeout(debounceTimer);
       clearOverlay();
       lastRenderedState = null;
+      if (out) out.innerText = t("hintsDisabledMsg");
+    } else {
       lastAnalyzedFEN = "";
-      clearTimeout(debounceTimer);
-      resetGameTracking();
-
-      if (!board) {
-        if (out) out.innerText = t("boardNotFoundWarn");
-        return;
-      }
-
-      if (out) out.innerText = t("refreshingMsg");
+      if (out) out.innerText = t("hintsEnabledMsg");
       requestBestMoves();
-    });
+    }
+  }
+
+  window.refreshChessHints = refreshHints;
+  window.toggleChessHints = toggleHints;
+
+  if (refreshHintsBtn) {
+    refreshHintsBtn.addEventListener("click", refreshHints);
   }
 
   if (toggleHintsBtn) {
-    toggleHintsBtn.addEventListener("click", () => {
-      isAutoHintEnabled = !isAutoHintEnabled;
-      updateToggleHintsUI();
-      const out = document.getElementById("chess-assistant-output");
-      if (!isAutoHintEnabled) {
-        clearTimeout(debounceTimer);
-        clearOverlay();
-        lastRenderedState = null;
-        if (out) out.innerText = t("hintsDisabledMsg");
-      } else {
-        lastAnalyzedFEN = "";
-        if (out) out.innerText = t("hintsEnabledMsg");
-        requestBestMoves();
-      }
-    });
+    toggleHintsBtn.addEventListener("click", toggleHints);
   }
 
   if (autoToggle) {
@@ -2082,6 +2151,36 @@ function createWidget() {
   }
 
   setupBoardObserver();
+}
+
+// ==========================================
+// 8. Горячие клавиши (Keyboard Shortcuts)
+// H / Р - скрыть / показать подсказки
+// R / К - обновить расчёт позиции
+// ==========================================
+if (!window.__chess_shortcuts_bound) {
+  window.__chess_shortcuts_bound = true;
+  window.addEventListener("keydown", (e) => {
+    const activeEl = document.activeElement;
+    const tag = activeEl ? activeEl.tagName : "";
+    if (tag === "INPUT" || tag === "TEXTAREA" || (activeEl && activeEl.isContentEditable)) {
+      return;
+    }
+    if (e.ctrlKey || e.altKey || e.metaKey) return;
+
+    const key = e.key ? e.key.toLowerCase() : "";
+    if (key === "h" || key === "р") {
+      e.preventDefault();
+      if (typeof window.toggleChessHints === "function") {
+        window.toggleChessHints();
+      }
+    } else if (key === "r" || key === "к") {
+      e.preventDefault();
+      if (typeof window.refreshChessHints === "function") {
+        window.refreshChessHints();
+      }
+    }
+  });
 }
 
 setInterval(() => {

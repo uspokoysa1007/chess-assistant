@@ -148,8 +148,30 @@ wc-chess-board, chess-board, .board-layout-chessboard, #board-single, .board-com
   box-shadow: 0 4px 16px rgba(168, 85, 247, 0.4), 0 2px 8px rgba(0, 0, 0, 0.8) !important;
 }
 
-.widget-header {
+.widget-drag-handle {
+  width: 44px !important;
+  height: 5px !important;
+  background: rgba(196, 181, 253, 0.45) !important;
+  border-radius: 3px !important;
+  margin: 0 auto 6px auto !important;
+  cursor: grab !important;
   touch-action: none !important;
+}
+
+.widget-drag-handle:active {
+  cursor: grabbing !important;
+  background: rgba(196, 181, 253, 0.75) !important;
+}
+
+.widget-header,
+.settings-panel-header {
+  touch-action: none !important;
+  cursor: grab !important;
+}
+
+.widget-header:active,
+.settings-panel-header:active {
+  cursor: grabbing !important;
 }
 
 .speed-modes-grid {
