@@ -1617,16 +1617,37 @@ window.addEventListener("orientationchange", () => {
 let startX = 0, startY = 0, startRight = 14, startBottom = 12;
 let isWidgetDragging = false, hasWidgetDragged = false;
 
+function clampWidgetPosition() {
+  const widget = document.getElementById("chess-assistant-widget");
+  if (!widget) return;
+  const rect = widget.getBoundingClientRect();
+  const maxRight = Math.max(0, window.innerWidth - widget.offsetWidth - 4);
+  const maxBottom = Math.max(0, window.innerHeight - widget.offsetHeight - 4);
+  let currentRight = parseFloat(widget.style.right);
+  if (isNaN(currentRight)) {
+    currentRight = window.innerWidth - rect.right;
+  }
+  let currentBottom = parseFloat(widget.style.bottom);
+  if (isNaN(currentBottom)) {
+    currentBottom = window.innerHeight - rect.bottom;
+  }
+  const clampedRight = Math.max(4, Math.min(maxRight, currentRight));
+  const clampedBottom = Math.max(4, Math.min(maxBottom, currentBottom));
+  widget.style.setProperty("right", `${clampedRight}px`, "important");
+  widget.style.setProperty("bottom", `${clampedBottom}px`, "important");
+  widget.style.setProperty("left", "auto", "important");
+  widget.style.setProperty("top", "auto", "important");
+  try {
+    localStorage.setItem("chess_widget_pos_r", widget.style.right);
+    localStorage.setItem("chess_widget_pos_b", widget.style.bottom);
+  } catch (err) {}
+}
+
 function onDragStart(clientX, clientY, target) {
   const widget = document.getElementById("chess-assistant-widget");
   if (!widget) return false;
 
-  // Не начинаем перетаскивание при клике на интерактивные кнопки, ссылки, поля ввода и чекбоксы
-  if (target && target.closest && target.closest("button, input, a, select, textarea, label, .btn-speed-pill, .btn-style-pill, .btn-platform-pill")) {
-    return false;
-  }
-
-  // Если виджет свернут в кнопку — разрешено тащить за любую точку
+  // Если виджет свернут в кнопку — разрешено тащить за любую точку всей плавающей кнопки
   if (isMinimized) {
     startX = clientX;
     startY = clientY;
@@ -1636,6 +1657,11 @@ function onDragStart(clientX, clientY, target) {
     isWidgetDragging = true;
     hasWidgetDragged = false;
     return true;
+  }
+
+  // Не начинаем перетаскивание при клике на интерактивные кнопки, ссылки, поля ввода и чекбоксы (когда меню раскрыто)
+  if (target && target.closest && target.closest("button, input, a, select, textarea, label, .btn-speed-pill, .btn-style-pill, .btn-platform-pill")) {
+    return false;
   }
 
   // Если меню открыто:
@@ -1650,6 +1676,7 @@ function onDragStart(clientX, clientY, target) {
   if (isHeader || isTopZone) {
     startX = clientX;
     startY = clientY;
+    const rect = widget.getBoundingClientRect();
     startRight = window.innerWidth - rect.right;
     startBottom = window.innerHeight - rect.bottom;
     isWidgetDragging = true;
@@ -1668,28 +1695,44 @@ function onDragMove(clientX, clientY) {
   const dy = clientY - startY;
   if (Math.hypot(dx, dy) > 4) {
     hasWidgetDragged = true;
+    widget.style.transition = "none";
     const maxRight = Math.max(0, window.innerWidth - widget.offsetWidth - 4);
     const maxBottom = Math.max(0, window.innerHeight - widget.offsetHeight - 4);
     const newRight = Math.max(4, Math.min(maxRight, startRight - dx));
     const newBottom = Math.max(4, Math.min(maxBottom, startBottom - dy));
-    widget.style.right = `${newRight}px`;
-    widget.style.bottom = `${newBottom}px`;
-    widget.style.left = "auto";
-    widget.style.top = "auto";
+    widget.style.setProperty("right", `${newRight}px`, "important");
+    widget.style.setProperty("bottom", `${newBottom}px`, "important");
+    widget.style.setProperty("left", "auto", "important");
+    widget.style.setProperty("top", "auto", "important");
   }
 }
 
 function onDragEnd() {
-  if (isWidgetDragging && hasWidgetDragged) {
-    const widget = document.getElementById("chess-assistant-widget");
-    if (widget) {
+  if (!isWidgetDragging) return;
+  const widget = document.getElementById("chess-assistant-widget");
+  const wasDragged = hasWidgetDragged;
+  if (widget) {
+    widget.style.transition = "";
+    if (wasDragged) {
       try {
         localStorage.setItem("chess_widget_pos_r", widget.style.right);
         localStorage.setItem("chess_widget_pos_b", widget.style.bottom);
       } catch (err) {}
+    } else if (isMinimized) {
+      // Тап / клик по свернутой кнопке без смещения — разворачиваем меню!
+      isMinimized = false;
+      widget.classList.remove("minimized");
+      const minBtn = document.getElementById("btn-minimize-widget");
+      if (minBtn) minBtn.innerText = "_";
+      requestAnimationFrame(() => {
+        clampWidgetPosition();
+      });
     }
   }
   isWidgetDragging = false;
+  setTimeout(() => {
+    hasWidgetDragged = false;
+  }, 100);
 }
 
 window.addEventListener("mousemove", (e) => {
@@ -2145,6 +2188,11 @@ function toggleWidgetMinimize() {
   isMinimized = !isMinimized;
   widget.classList.toggle("minimized", isMinimized);
   if (minBtn) minBtn.innerText = isMinimized ? "+" : "_";
+  if (!isMinimized) {
+    requestAnimationFrame(() => {
+      clampWidgetPosition();
+    });
+  }
 }
 
 extApi.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -2339,10 +2387,10 @@ function createWidget() {
     const savedR = localStorage.getItem("chess_widget_pos_r");
     const savedB = localStorage.getItem("chess_widget_pos_b");
     if (savedR && savedB) {
-      widget.style.right = savedR;
-      widget.style.bottom = savedB;
-      widget.style.left = "auto";
-      widget.style.top = "auto";
+      widget.style.setProperty("right", savedR, "important");
+      widget.style.setProperty("bottom", savedB, "important");
+      widget.style.setProperty("left", "auto", "important");
+      widget.style.setProperty("top", "auto", "important");
     }
   } catch (err) {}
 
@@ -2361,7 +2409,7 @@ function createWidget() {
   widget.addEventListener("touchstart", (e) => {
     if (e.touches.length === 1) {
       const ok = onDragStart(e.touches[0].clientX, e.touches[0].clientY, e.target);
-      if (ok && e.cancelable) {
+      if (ok && isMinimized && e.cancelable) {
         e.preventDefault();
       }
     }
@@ -2369,13 +2417,15 @@ function createWidget() {
 
   widget.addEventListener("click", () => {
     if (hasWidgetDragged) {
-      hasWidgetDragged = false;
       return;
     }
     if (isMinimized) {
       isMinimized = false;
       widget.classList.remove("minimized");
       minBtn.innerText = "_";
+      requestAnimationFrame(() => {
+        clampWidgetPosition();
+      });
     }
   });
 
