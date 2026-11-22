@@ -125,6 +125,11 @@ css = css.replace(
 );
 
 css = css.replace(
+  /\.widget-corner-grip\{[^}]+\}/,
+  '.widget-corner-grip{position:absolute!important;width:26px!important;height:26px!important;pointer-events:auto!important;cursor:grab!important;touch-action:none!important;opacity:0.6!important;z-index:10!important}'
+);
+
+css = css.replace(
   /\.widget-drag-handle:active\{[^}]+\}/,
   '.widget-drag-handle:active{cursor:grabbing!important;background:rgba(196,181,253,0.75)!important}'
 );

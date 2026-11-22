@@ -1665,18 +1665,24 @@ function onDragStart(clientX, clientY, target) {
   }
 
   // Если меню открыто:
-  // Разрешаем тащить за ручку перетаскивания (.widget-drag-handle),
+  // Разрешаем тащить за ручку перетаскивания (.widget-drag-handle), за угловые маркеры (.widget-corner-grip),
   // заголовок (.widget-header), шапку настроек (.settings-panel-header)
-  // или верхнюю область виджета (первые 42px)
-  const isHeader = target && target.closest && target.closest(".widget-header, .settings-panel-header, .widget-drag-handle");
+  // или за любой из 4-х углов открытого меню (сенсорная зона 44px)
+  const isHeader = target && target.closest && target.closest(".widget-header, .settings-panel-header, .widget-drag-handle, .widget-corner-grip");
   const rect = widget.getBoundingClientRect();
   const isTopZone = (clientY - rect.top < 42) &&
                     !(target && target.closest && target.closest("#chess-assistant-output, .chess-watermark, .platform-switch-row, .speed-modes-grid, .chess-controls-group"));
 
-  if (isHeader || isTopZone) {
+  const cornerSize = 44; // 44px удобная сенсорная зона под палец в каждом углу меню
+  const isTopLeft = (clientX - rect.left <= cornerSize) && (clientY - rect.top <= cornerSize);
+  const isTopRight = (rect.right - clientX <= cornerSize) && (clientY - rect.top <= cornerSize);
+  const isBottomLeft = (clientX - rect.left <= cornerSize) && (rect.bottom - clientY <= cornerSize);
+  const isBottomRight = (rect.right - clientX <= cornerSize) && (rect.bottom - clientY <= cornerSize);
+  const isCorner = isTopLeft || isTopRight || isBottomLeft || isBottomRight;
+
+  if (isHeader || isTopZone || isCorner) {
     startX = clientX;
     startY = clientY;
-    const rect = widget.getBoundingClientRect();
     startRight = window.innerWidth - rect.right;
     startBottom = window.innerHeight - rect.bottom;
     isWidgetDragging = true;
@@ -2380,6 +2386,10 @@ function createWidget() {
           <div><a href="https://bygemini.chess-assistants.workers.dev/" target="_blank" rel="noopener noreferrer">bygemini.chess-assistants.workers.dev</a></div>
         </div>
       </div>
+
+      <!-- Угловые зоны для удобного перетаскивания открытого меню на телефоне и ПК -->
+      <div class="widget-corner-grip bl" title="Потяни за угол"></div>
+      <div class="widget-corner-grip br" title="Потяни за угол"></div>
     </div>
   `;
 
@@ -2409,7 +2419,7 @@ function createWidget() {
   widget.addEventListener("touchstart", (e) => {
     if (e.touches.length === 1) {
       const ok = onDragStart(e.touches[0].clientX, e.touches[0].clientY, e.target);
-      if (ok && isMinimized && e.cancelable) {
+      if (ok && e.cancelable) {
         e.preventDefault();
       }
     }
@@ -2665,6 +2675,23 @@ function createWidget() {
     myTurnToggle.addEventListener("change", (e) => {
       isOnlyMyTurnEnabled = e.target.checked;
       lastAnalyzedFEN = "";
+      requestBestMoves();
+    });
+  }
+
+  const premovesToggle = document.getElementById("chess-premoves-toggle");
+  if (premovesToggle) {
+    premovesToggle.addEventListener("change", (e) => {
+      isPremovesEnabled = e.target.checked;
+      try {
+        localStorage.setItem("chess_premoves_enabled", isPremovesEnabled ? "true" : "false");
+      } catch (err) {}
+      lastAnalyzedFEN = "";
+      if (!isPremovesEnabled) {
+        clearOverlay();
+        const out = document.getElementById("chess-assistant-output");
+        if (out) out.innerText = t("readyMsg");
+      }
       requestBestMoves();
     });
   }
