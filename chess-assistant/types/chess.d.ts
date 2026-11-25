@@ -1,73 +1,88 @@
 /**
- * ♟️ Chess Assistant - TypeScript Описания Типов (Type Definitions)
- * 
+ * ♟️ Chess Assistant v2.4 — TypeScript Описания Типов (Type Definitions)
+ *
  * Этот файл описывает структуры данных, которые используются
- * в скриптах расширения (content.js, background.js).
- * 
- * Благодаря этому файлу редактор кода понимает, какие свойства
- * есть у ходов, движка и визуальных стрелок, и даёт умные подсказки!
+ * в скриптах расширения (content.js и background.js).
  */
 
-/** Клетка шахматной доски (например, 'e2', 'e4', 'a1') */
+/** Клетка шахматной доски в алгебраической нотации (например, 'e2', 'e4', 'a1') */
 export type ChessSquare = string;
 
+/** Поддерживаемые шахматные площадки */
+export type PlatformId = "chesscom" | "lichess";
+
 /** Режим отображения стрелок на доске */
-export type ArrowMode = "single" | "multi3" | "multi5";
+export type ArrowMode = "multi1" | "multi3" | "multi5";
 
 /** Стиль меток на целевых клетках */
-export type MarkerStyle = "square" | "circle" | "none";
+export type MarkerShape = "square" | "circle" | "none";
 
 /** Контроль времени и скорость расчёта движка */
 export type SpeedMode = "bullet" | "blitz" | "rapid" | "ultra";
 
 /** Режим легитной игры (античит): выкл, легит 1 (~1750 ELO), легит 2 (~1350 ELO) */
-export type LegitMode = "off" | "legit1" | "legit2";
+export type AmateurMode = "off" | "legit1" | "legit2";
 
-/** Время мышления легит-режима: 50 мс, 250 мс, 500 мс, 1 с, 2 с, 3 с, 5 с */
+/** Время мышления легит-режима в миллисекундах */
 export type LegitDelay = "50" | "250" | "500" | "1000" | "2000" | "3000" | "5000";
 
-/** Оценка позиции от Stockfish */
+/** Оценка позиции от Stockfish (со стороны игрока на очереди хода или нормализованная к белым) */
 export interface EvaluationScore {
-  /** 'cp' - пешечный перевес в сантипешках (100 = 1 пешка), 'mate' - мат в N ходов */
+  /** 'cp' — перевес в сантипешках (100 = 1 пешка), 'mate' — мат в N ходов */
   type: "cp" | "mate";
-  /** Значение: если cp, то например +150 (перевес 1.5 пешки), если mate, то например 3 */
+  /** Значение: для cp например +150 (+1.5 пешки), для mate например 3 */
   value: number;
 }
 
-/** Информация об одном рассчитанном ходе от Stockfish */
-export interface ChessMoveAnalysis {
+/** Информация об одном рассчитанном варианте от Stockfish */
+export interface MoveCandidate {
   /** Ход в формате UCI (например, "e2e4", "g1f3", "e7e8q") */
   move: string;
-  /** Текстовая или числовая оценка хода (например, "+1.2" или score-объект) */
-  score?: number | string;
-  /** Порядковый номер варианта (0 - лучший ход, 1 - второй и т.д.) */
-  rankIndex?: number;
-  /** Основная линия (вариант развития партии) */
-  pv?: string[];
+  /** Оценка позиции после данного хода */
+  score: EvaluationScore | null;
+  /** Ожидаемый ответный ход (премув / ponder) */
+  ponder: string | null;
+}
+
+/** Ответ background.js на запрос анализа позиции */
+export interface AnalysisResponse {
+  cancelled: boolean;
+  moves: MoveCandidate[];
+  ponderMove: string | null;
+  bestMove: string | null;
+  bestScore: EvaluationScore | null;
 }
 
 /** Состояние для отрисовки графики на Canvas */
 export interface VisualsState {
-  /** Список ходов для рисования стрелок */
-  moves: ChessMoveAnalysis[];
-  /** Ход соперника для премува (если есть) */
+  moves: MoveCandidate[];
   premoveMove?: string | null;
+  activeTurn?: "w" | "b";
+  oppMove?: string | null;
 }
 
-/** Результат двухэтапной валидации безопасного премува */
-export interface SafePremoveResult {
-  safe: boolean;
-  premoveMove?: string | null;
-  currentScore?: number | null;
-  worstScore?: number | null;
-  reason?: string;
+/** Запрос анализа позиции от content.js к background.js */
+export interface AnalyzePositionMessage {
+  type: "ANALYZE_POSITION";
+  fen: string;
+  depth?: number | null;
+  movetime?: number | null;
+  multiPV?: number;
 }
 
-/** Сообщение для общения между content.js и background.js */
-export interface ExtensionMessage {
-  action: "START_ANALYSIS" | "STOP_ANALYSIS" | "UPDATE_SETTINGS" | "EVAL_RESULT";
-  fen?: string;
-  speedMode?: SpeedMode;
-  arrowMode?: ArrowMode;
-  payload?: any;
+/** Изменение количества линий MultiPV в фоне */
+export interface SetMultiPVMessage {
+  type: "SET_MULTIPV";
+  multiPV: number;
 }
+
+/** Переключение свёрнутого состояния виджета при клике по иконке расширения */
+export interface ToggleWidgetMessage {
+  type: "TOGGLE_WIDGET";
+}
+
+/** Сообщения обмена между content.js и background.js */
+export type ExtensionMessage =
+  | AnalyzePositionMessage
+  | SetMultiPVMessage
+  | ToggleWidgetMessage;

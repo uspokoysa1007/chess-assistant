@@ -1,6 +1,6 @@
 /**
- * Скрипт сборки расширения Chess Assistant (PC версия)
- * Собирает проект в dist/ и упаковывает в chess-assistant.xpi
+ * Скрипт сборки расширения Chess Assistant (PC версия v2.4)
+ * Собирает проект в dist/, упаковывает в chess-assistant.xpi и очищает временную папку dist/
  */
 
 const fs = require('fs');
@@ -13,7 +13,7 @@ const ROOT_DIR = __dirname;
 const DIST_DIR = path.join(ROOT_DIR, 'dist');
 const XPI_PATH = path.join(ROOT_DIR, 'chess-assistant.xpi');
 
-console.log('🚀 [Build PC] Начало сборки Chess Assistant (PC)...');
+console.log('🚀 [Build PC] Начало сборки Chess Assistant v2.4 (PC)...');
 
 // 1. Очистка и создание структуры dist/
 if (fs.existsSync(DIST_DIR)) {
@@ -21,8 +21,16 @@ if (fs.existsSync(DIST_DIR)) {
 }
 fs.mkdirSync(path.join(DIST_DIR, 'background'), { recursive: true });
 fs.mkdirSync(path.join(DIST_DIR, 'content'), { recursive: true });
+fs.mkdirSync(path.join(DIST_DIR, 'icons'), { recursive: true });
 
-// Функция юникод-экранирования и минификации JSON (защита от чтения и удаление метаданных)
+// Копируем иконку пешки
+const iconSrc = path.join(ROOT_DIR, 'icons', 'pawn.svg');
+if (!fs.existsSync(iconSrc)) {
+  throw new Error(`Не найдена иконка расширения: ${iconSrc}`);
+}
+fs.copyFileSync(iconSrc, path.join(DIST_DIR, 'icons', 'pawn.svg'));
+
+// Минификация и Unicode-экранирование JSON
 function escapeAndMinifyJson(obj) {
   const jsonStr = JSON.stringify(obj);
   return jsonStr.replace(/[\u007f-\uffff]/g, (c) => {
@@ -30,78 +38,61 @@ function escapeAndMinifyJson(obj) {
   });
 }
 
-// 2. Обработка manifest.json (минификация, экранирование Unicode, анонимный GUID)
+// 2. Обработка manifest.json
 console.log('📄 [Build PC] Обработка manifest.json...');
 const manifestRaw = fs.readFileSync(path.join(ROOT_DIR, 'manifest.json'), 'utf8');
 const manifest = JSON.parse(manifestRaw);
 
-manifest.action = {
-  default_title: "Шахматный Помощник"
+manifest.version = '2.4';
+manifest.icons = {
+  '48': 'icons/pawn.svg',
+  '96': 'icons/pawn.svg'
 };
-delete manifest.icons;
-
+manifest.action = {
+  default_icon: 'icons/pawn.svg',
+  default_title: 'Шахматный Помощник'
+};
 manifest.browser_specific_settings = {
   gecko: {
-    id: "{ec8030f7-c20a-464f-9b0e-13a3a9e97384}",
-    strict_min_version: "109.0"
+    id: '{a4c8e910-7d3b-4e2a-9f61-8b2d4c5e7a90}',
+    strict_min_version: '109.0'
   }
 };
-
 manifest.content_scripts = [
   {
     matches: [
-      "*://*.chess.com/*",
-      "*://lichess.org/*",
-      "*://*.lichess.org/*"
+      '*://*.chess.com/*',
+      '*://lichess.org/*',
+      '*://*.lichess.org/*'
     ],
-    js: [
-      "content/content.js"
-    ],
-    css: [
-      "content/overlay.css"
-    ],
-    run_at: "document_idle"
+    js: ['content/content.js'],
+    css: ['content/overlay.css'],
+    run_at: 'document_idle'
   }
 ];
-
-manifest.web_accessible_resources = [
-  {
-    resources: [
-      "background/stockfish-19-full.js",
-      "background/stockfish-19-full.wasm"
-    ],
-    matches: [
-      "*://*.chess.com/*",
-      "*://lichess.org/*",
-      "*://*.lichess.org/*"
-    ]
-  }
-];
+delete manifest.web_accessible_resources;
 
 fs.writeFileSync(path.join(DIST_DIR, 'manifest.json'), escapeAndMinifyJson(manifest), 'utf8');
-console.log('✅ manifest.json сохранен в dist/ (минифицирован + Unicode экранирование)');
+console.log('✅ manifest.json сохранен в dist/');
 
 // 3. Минификация overlay.css
 console.log('🎨 [Build PC] Минификация overlay.css...');
-const cssRaw = fs.readFileSync(path.join(ROOT_DIR, 'content/overlay.css'), 'utf8');
+const cssRaw = fs.readFileSync(path.join(ROOT_DIR, 'content', 'overlay.css'), 'utf8');
 const cssMin = cssRaw
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .replace(/\s+/g, ' ')
   .replace(/\s*([{}:;,>+~])\s*/g, '$1')
   .replace(/;}/g, '}')
   .trim();
-fs.writeFileSync(path.join(DIST_DIR, 'content/overlay.css'), cssMin, 'utf8');
-console.log(`✅ dist/content/overlay.css сохранен (${cssMin.length} байт)`);
+fs.writeFileSync(path.join(DIST_DIR, 'content', 'overlay.css'), cssMin, 'utf8');
+console.log(`✅ dist/content/overlay.css готов (${cssMin.length} байт)`);
 
-// 4. Загрузка обфускатора
-function getObfuscator() {
-  const localObf = path.join(ROOT_DIR, '../scripts/obfuscator.bundle.js');
-  if (fs.existsSync(localObf)) return require(localObf);
-  const scratchBundle = 'C:/Users/fonya/.gemini/antigravity/brain/8ade855d-8452-4aa6-9764-aee78b8d5d0e/scratch/obfuscator.bundle.js';
-  return require(scratchBundle);
+// 4. Загрузка обфускатора из локальной папки scripts/
+const obfuscatorPath = path.resolve(ROOT_DIR, '../scripts/obfuscator.bundle.js');
+if (!fs.existsSync(obfuscatorPath)) {
+  throw new Error(`Не найден обфускатор: ${obfuscatorPath}`);
 }
-
-const Obfuscator = getObfuscator();
+const Obfuscator = require(obfuscatorPath);
 
 const obfOptions = {
   compact: true,
@@ -121,31 +112,28 @@ const obfOptions = {
 
 // Обфускация background.js
 console.log('⚙️ [Build PC] Обфускация background.js...');
-const bgRaw = fs.readFileSync(path.join(ROOT_DIR, 'background/background.js'), 'utf8');
+const bgRaw = fs.readFileSync(path.join(ROOT_DIR, 'background', 'background.js'), 'utf8');
 const bgCode = Obfuscator.obfuscate(bgRaw, obfOptions).getObfuscatedCode();
-fs.writeFileSync(path.join(DIST_DIR, 'background/background.js'), bgCode, 'utf8');
+fs.writeFileSync(path.join(DIST_DIR, 'background', 'background.js'), bgCode, 'utf8');
 console.log(`✅ dist/background/background.js готов (${bgCode.length} байт)`);
 
 // Обфускация content.js
 console.log('⚙️ [Build PC] Обфускация content.js...');
-const contentRaw = fs.readFileSync(path.join(ROOT_DIR, 'content/content.js'), 'utf8');
+const contentRaw = fs.readFileSync(path.join(ROOT_DIR, 'content', 'content.js'), 'utf8');
 const contentCode = Obfuscator.obfuscate(contentRaw, obfOptions).getObfuscatedCode();
-fs.writeFileSync(path.join(DIST_DIR, 'content/content.js'), contentCode, 'utf8');
+fs.writeFileSync(path.join(DIST_DIR, 'content', 'content.js'), contentCode, 'utf8');
 console.log(`✅ dist/content/content.js готов (${contentCode.length} байт)`);
 
-// 5. Копирование библиотечных файлов Stockfish для ПК (Stockfish 19 Full NNUE)
-const stockfishFiles = [
-  'stockfish-19-full.js',
-  'stockfish-19-full.wasm'
-];
-
+// 5. Копирование файлов Stockfish 19 Full NNUE
+const stockfishFiles = ['stockfish-19-full.js', 'stockfish-19-full.wasm'];
 for (const file of stockfishFiles) {
   const src = path.join(ROOT_DIR, 'background', file);
   const dst = path.join(DIST_DIR, 'background', file);
-  if (fs.existsSync(src)) {
-    console.log(`📦 [Build PC] Копирование background/${file}...`);
-    fs.copyFileSync(src, dst);
+  if (!fs.existsSync(src)) {
+    throw new Error(`Не найден файл движка: ${src}`);
   }
+  console.log(`📦 [Build PC] Копирование background/${file}...`);
+  fs.copyFileSync(src, dst);
 }
 
 // 6. Упаковка dist/ в chess-assistant.xpi
@@ -170,4 +158,9 @@ const psScript = `
 `;
 
 execSync(`powershell -NoProfile -Command "${psScript.replace(/[\r\n]+/g, ' ')}"`, { stdio: 'inherit' });
-console.log(`🎉 [Build PC] chess-assistant.xpi успешно создан! (${(fs.statSync(XPI_PATH).size / 1024 / 1024).toFixed(1)} MB)`);
+const sizeMb = (fs.statSync(XPI_PATH).size / 1024 / 1024).toFixed(1);
+
+// 7. Удаление временной папки dist/ (чтобы не хранить дубликат ~95 МБ)
+fs.rmSync(DIST_DIR, { recursive: true, force: true });
+console.log(`🧹 [Build PC] Временная папка dist/ очищена.`);
+console.log(`🎉 [Build PC] chess-assistant.xpi успешно создан! (${sizeMb} MB)`);

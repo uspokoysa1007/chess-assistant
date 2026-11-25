@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Chess Assistant — Умный шахматный ассистент (Stockfish 19)</title>
+  <title data-i18n="pageTitle">Chess Assistant — Умный шахматный ассистент (Stockfish 19)</title>
   <meta name="description" content="Мощное расширение для анализа шахматных партий в реальном времени на Chess.com и Lichess.org. Поддержка ПК и смартфонов.">
   <link rel="icon" type="image/svg+xml" href="pawn.svg">
   <link rel="stylesheet" href="style.css">
@@ -23,7 +23,7 @@
       <div class="logo">
         <img src="pawn.svg" alt="Chess Assistant Logo" class="logo-icon">
         <span class="logo-text">Chess<span class="gradient-text">Assistant</span></span>
-        <span class="version-tag">v1.0</span>
+        <span class="version-tag">v2.4</span>
       </div>
       <nav class="nav-links">
         <a href="#features" data-i18n="navFeatures">Возможности</a>
@@ -50,7 +50,7 @@
     <div class="container hero-container">
       <div class="hero-badge">
         <span class="pulse-dot"></span>
-        <span data-i18n="heroBadge">Stockfish 19 WASM • Версия 1.0 Релиз</span>
+        <span data-i18n="heroBadge">Stockfish 19 WASM • Версия 2.4 Релиз</span>
       </div>
       <h1 class="hero-title">
         <span data-i18n="heroTitle1">Побеждай уверенно.</span><br>
@@ -118,17 +118,17 @@
                 <span class="mock-gear">⚙️</span>
               </div>
               <div class="mock-eval-line">
-                <span>📊 Оценка:</span>
+                <span data-i18n="mockEvalLabel">📊 Оценка:</span>
                 <div class="mock-eval-bar"><div class="mock-eval-fill"></div></div>
-                <span class="mock-score">+0.3</span>
+                <span class="mock-score">+0.4</span>
               </div>
-              <div class="mock-status">🎯 Преимущество белых (в твою пользу! 🎉)</div>
+              <div class="mock-status" data-i18n="mockStatus">🎯 Преимущество белых (в твою пользу! 🎉)</div>
               <div class="mock-buttons">
-                <span class="mock-pill active">⚡ Пуля (150мс)</span>
-                <span class="mock-pill">🎯 Блиц</span>
-                <span class="mock-pill">🧠 Рапид</span>
+                <span class="mock-pill active" data-i18n="mockBullet">⚡ Пуля (150мс)</span>
+                <span class="mock-pill" data-i18n="mockBlitz">🎯 Блиц</span>
+                <span class="mock-pill" data-i18n="mockRapid">🧠 Рапид</span>
               </div>
-              <div class="mock-log">⬛ 1-й: D2 ➔ D4 [+0.3 • в твою пользу]<br>⬜ 2-й: A2 ➔ A4 [+0.2]<br>◽ 3-й: F1 ➔ E1 [+0.3]</div>
+              <div class="mock-log" data-i18n="mockLog">⬛ 1-й: D2 ➔ D4 [+0.4 • в твою пользу]<br>◽ 2-й: F1 ➔ E1 [+0.3 • в твою пользу]<br>⬜ 3-й: A2 ➔ A4 [+0.2 • в твою пользу]</div>
             </div>
           </div>
         </div>
@@ -246,8 +246,8 @@
 
       <!-- Переключатель вкладок ПК / Телефон -->
       <div class="install-tabs">
-        <button class="tab-btn active" data-tab="tab-pc">💻 Компьютер (Windows / Mac / Linux)</button>
-        <button class="tab-btn" data-tab="tab-phone">📱 Смартфон (Android)</button>
+        <button class="tab-btn active" data-tab="tab-pc" data-i18n="tabPcBtn">💻 Компьютер (Windows / Mac / Linux)</button>
+        <button class="tab-btn" data-tab="tab-phone" data-i18n="tabPhoneBtn">📱 Смартфон (Android)</button>
       </div>
 
       <!-- Вкладка ПК -->
@@ -257,7 +257,7 @@
             <div class="step-number">1</div>
             <h3 data-i18n="stepPc1Title">Скачай файл расширения</h3>
             <p data-i18n="stepPc1Desc">Скачай файл <code>chess-assistant.xpi</code> по кнопке ниже:</p>
-            <a href="https://github.com/uspokoysa1007/chess-assistant/releases/latest/download/chess-assistant.xpi" class="btn btn-primary btn-sm">
+            <a href="https://github.com/uspokoysa1007/chess-assistant/releases/latest/download/chess-assistant.xpi" class="btn btn-primary btn-sm" data-i18n="stepPcDownloadBtn">
               📥 Скачать chess-assistant.xpi (75 МБ)
             </a>
           </div>
@@ -289,7 +289,7 @@
             <div class="step-number">2</div>
             <h3 data-i18n="stepPh2Title">Скачай мобильную версию плагина</h3>
             <p data-i18n="stepPh2Desc">Скачай ультра-лёгкий пакет <code>chess-assistant_phone.xpi</code> (всего 1.2 МБ):</p>
-            <a href="downloads/chess-assistant_phone.xpi" download="chess-assistant_phone.xpi" class="btn btn-secondary btn-sm">
+            <a href="downloads/chess-assistant_phone.xpi" download="chess-assistant_phone.xpi" class="btn btn-secondary btn-sm" data-i18n="stepPhDownloadBtn">
               📥 Скачать chess-assistant_phone.xpi (1.2 МБ)
             </a>
           </div>
@@ -318,7 +318,7 @@
           </div>
         </div>
         <a href="https://t.me/chessassistants" target="_blank" class="btn btn-tg-large">
-          <span>Присоединиться к Telegram</span> ➔
+          <span data-i18n="tgJoinBtn">Присоединиться к Telegram</span> ➔
         </a>
       </div>
     </div>

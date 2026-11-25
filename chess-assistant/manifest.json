@@ -1,17 +1,22 @@
 {
   "manifest_version": 3,
   "name": "Шахматный Помощник",
-  "version": "2.2",
+  "version": "2.4",
   "description": "Шахматный плагин со Stockfish 19 для Chess.com и Lichess",
   "permissions": [
     "activeTab"
   ],
+  "icons": {
+    "48": "icons/pawn.svg",
+    "96": "icons/pawn.svg"
+  },
   "action": {
+    "default_icon": "icons/pawn.svg",
     "default_title": "Шахматный Помощник"
   },
   "browser_specific_settings": {
     "gecko": {
-      "id": "{ec8030f7-c20a-464f-9b0e-13a3a9e97384}",
+      "id": "{a4c8e910-7d3b-4e2a-9f61-8b2d4c5e7a90}",
       "strict_min_version": "109.0"
     }
   },
@@ -37,19 +42,6 @@
         "content/overlay.css"
       ],
       "run_at": "document_idle"
-    }
-  ],
-  "web_accessible_resources": [
-    {
-      "resources": [
-        "background/stockfish-19-full.js",
-        "background/stockfish-19-full.wasm"
-      ],
-      "matches": [
-        "*://*.chess.com/*",
-        "*://lichess.org/*",
-        "*://*.lichess.org/*"
-      ]
     }
   ]
 }

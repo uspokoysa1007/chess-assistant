@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "moduleResolution": "node",
+    "allowJs": true,
+    "checkJs": false
+  },
+  "include": [
+    "chess-assistant/**/*",
+    "scripts/**/*",
+    "site/**/*"
+  ]
+}

@@ -1,24 +1,51 @@
 // content.js - Шахматный Помощник (Chess.com & Lichess Edition)
-// Поддержка MultiPV (3 и 5 стрелок), фоновый премув, адаптеры платформ, SVG в Base64
+// Поддержка MultiPV (1 / 3 / 5 стрелок), безопасный премув с полной проверкой правил, единые знаки оценок и защита от гонок
 
 const extApi = typeof browser !== "undefined" ? browser : chrome;
+const IS_MOBILE_BUILD = false;
+
 console.log("[Content Script] Шахматный Помощник загружен (Chess.com & Lichess)!");
 
+function safeGetStorage(key, fallback = null) {
+  try {
+    if (typeof localStorage === "undefined") return fallback;
+    const val = localStorage.getItem(key);
+    return val !== null ? val : fallback;
+  } catch (_) {
+    return fallback;
+  }
+}
+
+function safeSetStorage(key, value) {
+  try {
+    if (typeof localStorage === "undefined") return;
+    localStorage.setItem(key, value);
+  } catch (_) {}
+}
+
 let boardObserver = null;
+let boardResizeObserver = null;
 let currentObservedBoard = null;
 let isAutoHintEnabled = true;
 let isOnlyMyTurnEnabled = true;
-let isPremovesEnabled = localStorage.getItem("chess_premoves_enabled") !== null ? localStorage.getItem("chess_premoves_enabled") === "true" : true;
-let isMinimized = false;
+const savedPremovesSetting = safeGetStorage("chess_premoves_enabled");
+let isPremovesEnabled = savedPremovesSetting !== null ? savedPremovesSetting === "true" : !IS_MOBILE_BUILD;
+let isMinimized = IS_MOBILE_BUILD;
 let isUserInteractingWithBoard = false;
 let debounceTimer = null;
 let lastAnalyzedFEN = "";
 let lastBoardFlipped = null;
-let hasOverlayDrawings = false;
 let lastRenderedState = null;
+let lastEvalState = { score: null, activeTurn: "w" };
+let currentRequestId = 0;
+
+let refreshHintsFn = null;
+let toggleHintsFn = null;
+let shortcutsBound = false;
 
 // Язык интерфейса (RU / EN)
-let currentLang = localStorage.getItem("chess_lang") || (navigator.language && navigator.language.startsWith("ru") ? "ru" : "en");
+const browserLang = (typeof navigator !== "undefined" && navigator.language) ? navigator.language : "en";
+let currentLang = safeGetStorage("chess_lang") || (browserLang.startsWith("ru") ? "ru" : "en");
 
 const TRANSLATIONS = {
   ru: {
@@ -80,8 +107,7 @@ const TRANSLATIONS = {
     legit2Title: "Легит 2 (~1350 ELO)",
     legit2Desc: "~75% точность",
     legitDelayLabel: "Мышление легита:",
-    amateurModeOn: "Легит включён",
-    amateurModeOff: "Включить Легит"
+    amateurModeOn: "Легит включён"
   },
   en: {
     title: "Stockfish 19",
@@ -142,8 +168,7 @@ const TRANSLATIONS = {
     legit2Title: "Legit 2 (~1350 ELO)",
     legit2Desc: "~75% accuracy",
     legitDelayLabel: "Legit thinking time:",
-    amateurModeOn: "Legit enabled",
-    amateurModeOff: "Enable Legit"
+    amateurModeOn: "Legit enabled"
   }
 };
 
@@ -152,37 +177,41 @@ function t(key) {
   return dict[key] || TRANSLATIONS.ru[key] || key;
 }
 
-function setLanguage(lang) {
-  if (lang !== "ru" && lang !== "en") return;
-  currentLang = lang;
-  localStorage.setItem("chess_lang", currentLang);
+const SPEED_MODES = IS_MOBILE_BUILD
+  ? {
+      bullet: { name: "Пуля", movetime: 50, depth: 8, debounce: 80, label: "Пуля (50мс • 8d)" },
+      blitz:  { name: "Блиц", movetime: 100, depth: 9, debounce: 100, label: "Блиц (100мс • 9d)" },
+      rapid:  { name: "Рапид", movetime: 150, depth: 11, debounce: 120, label: "Рапид (150мс • 11d)" }
+    }
+  : {
+      bullet: { name: "Пуля", movetime: 150, depth: null, debounce: 50, label: "Пуля (150мс)" },
+      blitz:  { name: "Блиц", movetime: 500, depth: 11, debounce: 150, label: "Блиц (~0.5с)" },
+      rapid:  { name: "Рапид", movetime: null, depth: 14, debounce: 300, label: "Рапид" },
+      ultra:  { name: "Ультра (7с)", movetime: 7000, depth: 26, debounce: 300, label: "Ультра (7с • 26х)" }
+    };
 
-  const widget = document.getElementById("chess-assistant-widget");
-  const wasSettingsOpen = document.getElementById("chess-settings-panel")?.style.display !== "none";
-  if (widget) {
-    widget.remove();
-    createWidget();
-    if (wasSettingsOpen) {
-      const panel = document.getElementById("chess-settings-panel");
-      if (panel) panel.style.display = "block";
-    }
-    if (lastRenderedState) {
-      drawAllVisuals(lastRenderedState);
-    }
-  }
+// Настройки режимов (сохраняются безопасно через safeGetStorage)
+const rawArrowMode = safeGetStorage("chess_arrow_mode");
+let arrowMode = IS_MOBILE_BUILD
+  ? "multi1"
+  : ((rawArrowMode === "multi1" || rawArrowMode === "multi3" || rawArrowMode === "multi5") ? rawArrowMode : "multi3");
+
+const rawMarkerShape = safeGetStorage("chess_marker_shape");
+let markerShape = (rawMarkerShape === "square" || rawMarkerShape === "circle" || rawMarkerShape === "none")
+  ? rawMarkerShape
+  : "square";
+
+let speedMode = safeGetStorage("chess_speed_mode") || (IS_MOBILE_BUILD ? "rapid" : "bullet");
+if (!SPEED_MODES[speedMode]) {
+  speedMode = IS_MOBILE_BUILD ? "rapid" : "bullet";
 }
-
-// Настройки режимов (сохраняются в localStorage)
-let arrowMode = localStorage.getItem("chess_arrow_mode") || "multi3"; // "multi1" | "multi3" | "multi5"
-let markerShape = localStorage.getItem("chess_marker_shape") || "square"; // "square" | "circle" | "none"
-let speedMode = localStorage.getItem("chess_speed_mode") || "bullet"; // "bullet" | "blitz" | "rapid" | "ultra"
 
 // ==========================================
 // 1.1. АНТИЧИТ ЛЕГИТ-МОДУЛИ
 // legit1: Клубный уровень (~1750 ELO, точность ~82–85%)
 // legit2: Любитель (~1350 ELO, точность ~72–75%)
 // ==========================================
-let rawAmateurStorage = localStorage.getItem("chess_amateur_mode");
+const rawAmateurStorage = safeGetStorage("chess_amateur_mode");
 let amateurMode = "off";
 if (rawAmateurStorage === "legit1" || rawAmateurStorage === "legit2") {
   amateurMode = rawAmateurStorage;
@@ -191,10 +220,8 @@ if (rawAmateurStorage === "legit1" || rawAmateurStorage === "legit2") {
 }
 let amateurModeEnabled = amateurMode !== "off";
 
-// Настройка времени мышления / задержки для Легит-режимов
-// 50 мс, 250 мс, 500 мс, 1 с (1000), 2 с (2000), 3 с (3000), 5 с (5000)
 const VALID_LEGIT_DELAYS = ["50", "250", "500", "1000", "2000", "3000", "5000"];
-let rawDelayStorage = localStorage.getItem("chess_legit_delay");
+const rawDelayStorage = safeGetStorage("chess_legit_delay");
 let legitDelay = VALID_LEGIT_DELAYS.includes(rawDelayStorage) ? rawDelayStorage : "1000";
 
 const AMATEUR_CONFIGS = {
@@ -203,23 +230,22 @@ const AMATEUR_CONFIGS = {
     bestMoveProb: 0.72,
     maxBlunderCp: 120,
     forceBestOnMate: true,
-    depth: 11,
-    delayMs: [1800, 2800],
+    depth: 11
   },
   legit2: {
     name: "Легит 2 (~1350 ELO)",
     bestMoveProb: 0.50,
     maxBlunderCp: 220,
     forceBestOnMate: true,
-    depth: 8,
-    delayMs: [1500, 3200],
+    depth: 8
   }
 };
 
 /**
  * Выбирает ход в стиле живого человека (Легит 1 или Легит 2).
+ * Работает по сырым оценкам со стороны текущего игрока.
  * @param {Array} moves — массив {move, score} от Stockfish
- * @returns {{move, score}} — выбранный ход
+ * @returns {{move, score}|null} — выбранный ход
  */
 function amateurPickMove(moves) {
   if (!moves || moves.length === 0) return null;
@@ -235,20 +261,22 @@ function amateurPickMove(moves) {
     if (best.score?.type === "cp" && Math.abs(best.score.value) > 800) return best;
   }
 
-  // Бросаем монетку: играем лучший ход или нет?
+  // Бросаем монетку: играем лучший ход или нет
   const roll = Math.random();
   if (roll < config.bestMoveProb) return best;
 
-  // Собираем «безопасные» субоптимальные ходы
+  // Собираем безопасные субоптимальные ходы (только с известной оценкой)
   const bestCp = best.score?.type === "cp" ? best.score.value : 0;
   const candidates = moves.slice(1).filter((m) => {
-    if (!m.score) return true;
-    if (m.score.type === "mate" && m.score.value < 0) return false;
+    if (!m.score) return false;
+    if (m.score.type === "mate") {
+      return m.score.value > 0;
+    }
     if (m.score.type === "cp") {
       const diff = Math.abs(bestCp - m.score.value);
       return diff <= config.maxBlunderCp;
     }
-    return true;
+    return false;
   });
 
   if (candidates.length === 0) return best;
@@ -264,24 +292,20 @@ function amateurPickMove(moves) {
   return candidates[candidates.length - 1];
 }
 
-// Определение платформы: авто по location.hostname с сохранением в localStorage
+// Определение платформы: строго по домену, с fallback на хранилище
 function detectInitialPlatform() {
-  const saved = localStorage.getItem("chess_platform");
+  const host = typeof location !== "undefined" ? location.hostname : "";
+  if (host.includes("lichess.org")) return "lichess";
+  if (host.includes("chess.com")) return "chesscom";
+  const saved = safeGetStorage("chess_platform");
   if (saved === "chesscom" || saved === "lichess") return saved;
-  return location.hostname.includes("lichess.org") ? "lichess" : "chesscom";
+  return "chesscom";
 }
 let currentPlatform = detectInitialPlatform();
 
 const MULTI3_COLORS = ["#000000", "#808080", "#ffffff"];
 const MULTI5_COLOR = "#000000";
-const PREMOVE_COLOR = "#22c55e";
-
-const SPEED_MODES = {
-  bullet: { name: "Пуля", movetime: 150, depth: null, debounce: 50, label: "Пуля (150мс)" },
-  blitz:  { name: "Блиц", movetime: 500, depth: 11, debounce: 150, label: "Блиц (~0.5с)" },
-  rapid:  { name: "Рапид", movetime: null, depth: 14, debounce: 300, label: "Рапид" },
-  ultra:  { name: "Ультра (7с)", movetime: 7000, depth: 26, debounce: 300, label: "Ультра (7с • 26х)" }
-};
+const PREMOVE_COLOR = IS_MOBILE_BUILD ? "#7c3aed" : "#22c55e";
 
 // ==========================================
 // 1. АДАПТЕРЫ ПЛАТФОРМ (Chess.com & Lichess)
@@ -295,6 +319,7 @@ let gameTracking = {
   blackRookA8Moved: false,
   blackRookH8Moved: false
 };
+let lastPlyCount = 0;
 
 function resetGameTracking() {
   gameTracking = {
@@ -305,7 +330,34 @@ function resetGameTracking() {
     blackRookA8Moved: false,
     blackRookH8Moved: false
   };
+  lastPlyCount = 0;
 }
+
+function findFirstNonEmptySelector(selectors) {
+  for (const sel of selectors) {
+    const nodes = document.querySelectorAll(sel);
+    if (nodes.length > 0) return Array.from(nodes);
+  }
+  return [];
+}
+
+const CHESSCOM_MOVE_SELECTORS = [
+  "wc-vertical-move-list .node",
+  "wc-simple-move-list .node",
+  ".vertical-move-list .node",
+  ".move-list-wrapper .node",
+  ".move-node",
+  ".move-text-component"
+];
+
+const LICHESS_MOVE_SELECTORS = [
+  "l4x kwdb",
+  "rm6 kwdb",
+  "l4x m2",
+  ".analyse__moves move",
+  ".tview2 move",
+  ".moves move"
+];
 
 const Adapters = {
   chesscom: {
@@ -363,27 +415,26 @@ const Adapters = {
         if (turnClock.classList.contains("clock-bottom")) return isFlipped ? "b" : "w";
       }
 
-      // 2. Список ходов (самый надёжный счётчик на Chess.com)
-      const moveNodes = document.querySelectorAll(
-        "wc-vertical-move-list .node, .vertical-move-list .node, .move-list-wrapper .node, .move-node, .move-text-component"
-      );
+      // 2. Список ходов по приоритету селекторов (без двойного подсчёта)
+      const moveNodes = findFirstNonEmptySelector(CHESSCOM_MOVE_SELECTORS);
       if (moveNodes.length > 0) {
-        return moveNodes.length % 2 === 1 ? "b" : "w";
+        const selectedIdx = moveNodes.findIndex((n) => n.classList.contains("selected") || !!n.querySelector(".selected"));
+        const activePlyCount = selectedIdx !== -1 ? selectedIdx + 1 : moveNodes.length;
+        return activePlyCount % 2 === 1 ? "b" : "w";
       }
 
-      // 3. Если часов и списка ходов нет: проверяем 2 подсветки последнего завершённого хода.
-      // ВАЖНО: проверяем только если игрок НЕ выбирает и НЕ тащит фигуру!
+      // 3. Если часов и списка ходов нет: проверяем 2 подсветки последнего завершённого хода
       if (board && !this.isInteracting(board)) {
         const highlights = board.querySelectorAll(".highlight");
         if (highlights.length === 2) {
           for (const hl of highlights) {
             const hlClasses = Array.from(hl.classList);
-            const sqClass = hlClasses.find((c) => c.startsWith("square-"));
+            const sqClass = hlClasses.find((c) => /^square-[1-8]{2}$/.test(c));
             if (sqClass) {
               const piece = board.querySelector(`.piece.${sqClass}:not(.dragging)`) || board.querySelector(`.piece.${sqClass}`);
               if (piece) {
                 const pieceClasses = Array.from(piece.classList);
-                const typeClass = pieceClasses.find((c) => c.length === 2 && (c[0] === "w" || c[0] === "b"));
+                const typeClass = pieceClasses.find((c) => /^[wb][pnbrqk]$/.test(c));
                 if (typeClass) {
                   return typeClass[0] === "w" ? "b" : "w";
                 }
@@ -396,10 +447,11 @@ const Adapters = {
       return "w";
     },
     getCastlingAndEnPassant(board, grid) {
-      const moveNodes = document.querySelectorAll(
-        "wc-vertical-move-list .node, .vertical-move-list .node, .move-list-wrapper .node, .move-node"
-      );
-      if (moveNodes.length === 0) resetGameTracking();
+      const moveNodes = findFirstNonEmptySelector(CHESSCOM_MOVE_SELECTORS);
+      if (moveNodes.length === 0 || moveNodes.length < lastPlyCount) {
+        resetGameTracking();
+      }
+      lastPlyCount = moveNodes.length;
 
       if (!this.isDragging(board)) {
         if (grid[0][4] !== "wk") gameTracking.whiteKingMoved = true;
@@ -448,10 +500,14 @@ const Adapters = {
       if (highlights.length >= 2) {
         const sqs = [];
         highlights.forEach((hl) => {
-          const cl = Array.from(hl.classList).find((c) => c.startsWith("square-"));
+          const cl = Array.from(hl.classList).find((c) => /^square-[1-8]{2}$/.test(c));
           if (cl) {
             const cr = cl.replace("square-", "");
-            sqs.push({ col: parseInt(cr[0]) - 1, row: parseInt(cr[1]) - 1 });
+            const col = parseInt(cr[0], 10) - 1;
+            const row = parseInt(cr[1], 10) - 1;
+            if (col >= 0 && col < 8 && row >= 0 && row < 8) {
+              sqs.push({ col, row });
+            }
           }
         });
         if (sqs.length === 2) {
@@ -472,15 +528,15 @@ const Adapters = {
     },
     parseBoardToFEN(board) {
       const grid = Array.from({ length: 8 }, () => Array(8).fill(null));
-      const pieces = board.querySelectorAll(".piece");
+      const pieces = board.querySelectorAll(".piece:not(.ghost):not(.element-pool)");
       pieces.forEach((p) => {
         const classes = Array.from(p.classList);
-        const typeClass = classes.find((c) => c.length === 2 && (c[0] === "w" || c[0] === "b"));
-        const squareClass = classes.find((c) => c.startsWith("square-"));
+        const typeClass = classes.find((c) => /^[wb][pnbrqk]$/.test(c));
+        const squareClass = classes.find((c) => /^square-[1-8]{2}$/.test(c));
         if (typeClass && squareClass) {
           const coords = squareClass.replace("square-", "");
-          const col = parseInt(coords[0]) - 1;
-          const row = parseInt(coords[1]) - 1;
+          const col = parseInt(coords[0], 10) - 1;
+          const row = parseInt(coords[1], 10) - 1;
           if (col >= 0 && col < 8 && row >= 0 && row < 8) {
             grid[row][col] = typeClass;
           }
@@ -550,16 +606,31 @@ const Adapters = {
     },
     detectTurn(board) {
       const isFlipped = this.isBoardFlipped(board);
-      if (document.querySelector(".rclock-bottom.running, .rclock.white.running")) {
+
+      // 1. Проверяем часы по прямому цвету (не зависят от переворота доски)
+      if (document.querySelector(".rclock.white.running, .rclock-white.running, .clock-white.running")) {
+        return "w";
+      }
+      if (document.querySelector(".rclock.black.running, .rclock-black.running, .clock-black.running")) {
+        return "b";
+      }
+
+      // 2. Проверяем позиционные часы (зависят от переворота доски)
+      if (document.querySelector(".rclock-bottom.running")) {
         return isFlipped ? "b" : "w";
       }
-      if (document.querySelector(".rclock-top.running, .rclock.black.running")) {
+      if (document.querySelector(".rclock-top.running")) {
         return isFlipped ? "w" : "b";
       }
-      const moves = document.querySelectorAll("l4x m2, .moves move, .analyse__moves move, .tview2 move, m2");
+
+      // 3. Список ходов (учитываем активный полуход при просмотре истории)
+      const moves = findFirstNonEmptySelector(LICHESS_MOVE_SELECTORS);
       if (moves.length > 0) {
-        return moves.length % 2 === 1 ? "b" : "w";
+        const activeIdx = moves.findIndex((n) => n.classList.contains("active"));
+        const activePlyCount = activeIdx !== -1 ? activeIdx + 1 : moves.length;
+        return activePlyCount % 2 === 1 ? "b" : "w";
       }
+
       if (!this.isInteracting(board)) {
         const lastMoves = (board || document).querySelectorAll("square.last-move");
         if (lastMoves.length === 2) {
@@ -579,8 +650,11 @@ const Adapters = {
       return "w";
     },
     getCastlingAndEnPassant(board, grid) {
-      const moveNodes = document.querySelectorAll("l4x m2, .moves move, .analyse__moves move, .tview2 move, m2");
-      if (moveNodes.length === 0) resetGameTracking();
+      const moveNodes = findFirstNonEmptySelector(LICHESS_MOVE_SELECTORS);
+      if (moveNodes.length === 0 || moveNodes.length < lastPlyCount) {
+        resetGameTracking();
+      }
+      lastPlyCount = moveNodes.length;
 
       if (!this.isDragging(board)) {
         if (grid[0][4] !== "K") gameTracking.whiteKingMoved = true;
@@ -766,12 +840,16 @@ class ChessSimulator {
   }
 
   load(fen) {
-    const parts = fen.trim().split(/\s+/);
+    const safeFen = (typeof fen === "string" && fen.trim())
+      ? fen.trim()
+      : "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+    const parts = safeFen.split(/\s+/);
     this.board = Array(8).fill(null).map(() => Array(8).fill(null));
-    const rows = parts[0].split("/");
-    for (let r = 0; r < 8; r++) {
+    const rows = (parts[0] || "").split("/");
+    for (let r = 0; r < Math.min(8, rows.length); r++) {
       let f = 0;
       for (const ch of rows[r]) {
+        if (f > 7) break;
         if (/\d/.test(ch)) {
           f += parseInt(ch, 10);
         } else {
@@ -780,7 +858,7 @@ class ChessSimulator {
         }
       }
     }
-    this.turn = parts[1] || "w";
+    this.turn = parts[1] === "b" ? "b" : "w";
     this.castling = parts[2] || "-";
     this.ep = parts[3] || "-";
     this.half = parseInt(parts[4] || "0", 10);
@@ -791,7 +869,7 @@ class ChessSimulator {
     if (!sq || sq.length < 2) return null;
     const f = sq.charCodeAt(0) - 97;
     const r = 8 - parseInt(sq[1], 10);
-    if (f < 0 || f > 7 || r < 0 || r > 7) return null;
+    if (f < 0 || f > 7 || r < 0 || r > 7 || Number.isNaN(r)) return null;
     return { r, f };
   }
 
@@ -800,12 +878,26 @@ class ChessSimulator {
   }
 
   isPieceWhite(p) {
-    return p && p === p.toUpperCase();
+    return Boolean(p && p === p.toUpperCase());
   }
 
   getPiece(r, f) {
     if (r < 0 || r > 7 || f < 0 || f > 7) return null;
     return this.board[r][f];
+  }
+
+  isPathClear(fromCoord, toCoord) {
+    const dr = Math.sign(toCoord.r - fromCoord.r);
+    const df = Math.sign(toCoord.f - fromCoord.f);
+    let r = fromCoord.r + dr;
+    let f = fromCoord.f + df;
+    while (r !== toCoord.r || f !== toCoord.f) {
+      if (r < 0 || r > 7 || f < 0 || f > 7) return false;
+      if (this.board[r][f] !== null) return false;
+      r += dr;
+      f += df;
+    }
+    return true;
   }
 
   isAttacked(targetR, targetF, byColor) {
@@ -889,11 +981,14 @@ class ChessSimulator {
   isCheck(color) {
     const kingChar = color === "w" ? "K" : "k";
     const oppColor = color === "w" ? "b" : "w";
-    let kr = -1, kf = -1;
+    let kr = -1;
+    let kf = -1;
     for (let r = 0; r < 8; r++) {
       for (let f = 0; f < 8; f++) {
         if (this.board[r][f] === kingChar) {
-          kr = r; kf = f; break;
+          kr = r;
+          kf = f;
+          break;
         }
       }
       if (kr !== -1) break;
@@ -907,6 +1002,7 @@ class ChessSimulator {
     const fromCoord = ChessSimulator.sqToCoord(uci.slice(0, 2));
     const toCoord = ChessSimulator.sqToCoord(uci.slice(2, 4));
     if (!fromCoord || !toCoord) return false;
+    if (fromCoord.r === toCoord.r && fromCoord.f === toCoord.f) return false;
 
     const piece = this.board[fromCoord.r][fromCoord.f];
     if (!piece) return false;
@@ -916,49 +1012,134 @@ class ChessSimulator {
 
     const movingColor = this.turn;
     const opponentColor = movingColor === "w" ? "b" : "w";
-    const promo = uci[4] ? (isPieceWhite ? uci[4].toUpperCase() : uci[4].toLowerCase()) : null;
-
     const savedTarget = this.board[toCoord.r][toCoord.f];
 
     if (savedTarget && this.isPieceWhite(savedTarget) === isPieceWhite) {
       return false;
     }
 
-    this.board[fromCoord.r][fromCoord.f] = null;
-    let placedPiece = promo || piece;
+    const rawPromo = uci[4] ? uci[4].toLowerCase() : null;
+    if (rawPromo && !["q", "r", "b", "n"].includes(rawPromo)) return false;
+    const promo = rawPromo ? (isPieceWhite ? rawPromo.toUpperCase() : rawPromo) : null;
 
-    let epCaptured = null;
+    const dr = toCoord.r - fromCoord.r;
+    const df = toCoord.f - fromCoord.f;
+    const absDr = Math.abs(dr);
+    const absDf = Math.abs(df);
+    const lowerPiece = piece.toLowerCase();
+
     let epCapturedPos = null;
-    if ((piece === "P" || piece === "p") && uci.slice(2, 4) === this.ep) {
-      const epR = isPieceWhite ? toCoord.r + 1 : toCoord.r - 1;
-      epCapturedPos = { r: epR, f: toCoord.f };
-      epCaptured = this.board[epR][toCoord.f];
-      this.board[epR][toCoord.f] = null;
-    }
-
+    let epCaptured = null;
     let castlingRookFrom = null;
     let castlingRookTo = null;
     let castlingRookPiece = null;
-    if (piece === "K" && uci === "e1g1") {
-      castlingRookFrom = { r: 7, f: 7 }; castlingRookTo = { r: 7, f: 5 }; castlingRookPiece = "R";
-    } else if (piece === "K" && uci === "e1c1") {
-      castlingRookFrom = { r: 7, f: 0 }; castlingRookTo = { r: 7, f: 3 }; castlingRookPiece = "R";
-    } else if (piece === "k" && uci === "e8g8") {
-      castlingRookFrom = { r: 0, f: 7 }; castlingRookTo = { r: 0, f: 5 }; castlingRookPiece = "r";
-    } else if (piece === "k" && uci === "e8c8") {
-      castlingRookFrom = { r: 0, f: 0 }; castlingRookTo = { r: 0, f: 3 }; castlingRookPiece = "r";
+
+    // Проверка правил движения для каждой фигуры
+    if (lowerPiece === "p") {
+      const dir = isPieceWhite ? -1 : 1;
+      const startRank = isPieceWhite ? 6 : 1;
+      const promoRank = isPieceWhite ? 0 : 7;
+
+      if (toCoord.r === promoRank) {
+        if (!promo) return false;
+      } else if (promo) {
+        return false;
+      }
+
+      if (df === 0) {
+        if (savedTarget) return false;
+        if (dr === dir) {
+          // Одиночный ход вперёд
+        } else if (dr === 2 * dir && fromCoord.r === startRank) {
+          if (this.board[fromCoord.r + dir][fromCoord.f] !== null) return false;
+        } else {
+          return false;
+        }
+      } else if (absDf === 1 && dr === dir) {
+        if (savedTarget) {
+          // Обычное взятие по диагонали
+        } else if (uci.slice(2, 4) === this.ep) {
+          const expectedOppPawn = isPieceWhite ? "p" : "P";
+          if (this.board[fromCoord.r][toCoord.f] !== expectedOppPawn) return false;
+          epCapturedPos = { r: fromCoord.r, f: toCoord.f };
+          epCaptured = this.board[fromCoord.r][toCoord.f];
+        } else {
+          return false;
+        }
+      } else {
+        return false;
+      }
+    } else {
+      if (promo) return false;
+
+      if (lowerPiece === "n") {
+        if (!((absDr === 2 && absDf === 1) || (absDr === 1 && absDf === 2))) return false;
+      } else if (lowerPiece === "b") {
+        if (absDr !== absDf || absDr === 0 || !this.isPathClear(fromCoord, toCoord)) return false;
+      } else if (lowerPiece === "r") {
+        if ((dr !== 0 && df !== 0) || (absDr + absDf === 0) || !this.isPathClear(fromCoord, toCoord)) return false;
+      } else if (lowerPiece === "q") {
+        if ((absDr !== absDf && dr !== 0 && df !== 0) || (absDr + absDf === 0) || !this.isPathClear(fromCoord, toCoord)) return false;
+      } else if (lowerPiece === "k") {
+        if (absDr <= 1 && absDf <= 1) {
+          // Обычный ход короля
+        } else if (dr === 0 && absDf === 2) {
+          if (this.isAttacked(fromCoord.r, fromCoord.f, opponentColor)) return false;
+          if (piece === "K" && uci === "e1g1") {
+            if (!this.castling.includes("K") || this.board[7][7] !== "R") return false;
+            if (this.board[7][5] !== null || this.board[7][6] !== null) return false;
+            if (this.isAttacked(7, 5, "b")) return false;
+            castlingRookFrom = { r: 7, f: 7 };
+            castlingRookTo = { r: 7, f: 5 };
+            castlingRookPiece = "R";
+          } else if (piece === "K" && uci === "e1c1") {
+            if (!this.castling.includes("Q") || this.board[7][0] !== "R") return false;
+            if (this.board[7][1] !== null || this.board[7][2] !== null || this.board[7][3] !== null) return false;
+            if (this.isAttacked(7, 3, "b")) return false;
+            castlingRookFrom = { r: 7, f: 0 };
+            castlingRookTo = { r: 7, f: 3 };
+            castlingRookPiece = "R";
+          } else if (piece === "k" && uci === "e8g8") {
+            if (!this.castling.includes("k") || this.board[0][7] !== "r") return false;
+            if (this.board[0][5] !== null || this.board[0][6] !== null) return false;
+            if (this.isAttacked(0, 5, "w")) return false;
+            castlingRookFrom = { r: 0, f: 7 };
+            castlingRookTo = { r: 0, f: 5 };
+            castlingRookPiece = "r";
+          } else if (piece === "k" && uci === "e8c8") {
+            if (!this.castling.includes("q") || this.board[0][0] !== "r") return false;
+            if (this.board[0][1] !== null || this.board[0][2] !== null || this.board[0][3] !== null) return false;
+            if (this.isAttacked(0, 3, "w")) return false;
+            castlingRookFrom = { r: 0, f: 0 };
+            castlingRookTo = { r: 0, f: 3 };
+            castlingRookPiece = "r";
+          } else {
+            return false;
+          }
+        } else {
+          return false;
+        }
+      } else {
+        return false;
+      }
+    }
+
+    this.board[fromCoord.r][fromCoord.f] = null;
+    if (epCapturedPos) {
+      this.board[epCapturedPos.r][epCapturedPos.f] = null;
     }
     if (castlingRookFrom) {
       this.board[castlingRookFrom.r][castlingRookFrom.f] = null;
       this.board[castlingRookTo.r][castlingRookTo.f] = castlingRookPiece;
     }
-
-    this.board[toCoord.r][toCoord.f] = placedPiece;
+    this.board[toCoord.r][toCoord.f] = promo || piece;
 
     if (this.isCheck(movingColor)) {
       this.board[fromCoord.r][fromCoord.f] = piece;
       this.board[toCoord.r][toCoord.f] = savedTarget;
-      if (epCapturedPos) this.board[epCapturedPos.r][epCapturedPos.f] = epCaptured;
+      if (epCapturedPos) {
+        this.board[epCapturedPos.r][epCapturedPos.f] = epCaptured;
+      }
       if (castlingRookFrom) {
         this.board[castlingRookFrom.r][castlingRookFrom.f] = castlingRookPiece;
         this.board[castlingRookTo.r][castlingRookTo.f] = null;
@@ -966,7 +1147,7 @@ class ChessSimulator {
       return false;
     }
 
-    if ((piece === "P" || piece === "p") && Math.abs(toCoord.r - fromCoord.r) === 2) {
+    if (lowerPiece === "p" && absDr === 2) {
       const epR = (fromCoord.r + toCoord.r) / 2;
       this.ep = ChessSimulator.coordToSq(epR, fromCoord.f);
     } else {
@@ -974,20 +1155,27 @@ class ChessSimulator {
     }
 
     if (piece === "K") {
-      this.castling = this.castling.replace("K", "").replace("Q", "") || "-";
+      this.castling = this.castling.replace("K", "").replace("Q", "");
     } else if (piece === "k") {
-      this.castling = this.castling.replace("k", "").replace("q", "") || "-";
+      this.castling = this.castling.replace("k", "").replace("q", "");
     } else if (piece === "R") {
-      if (fromCoord.r === 7 && fromCoord.f === 7) this.castling = this.castling.replace("K", "") || "-";
-      if (fromCoord.r === 7 && fromCoord.f === 0) this.castling = this.castling.replace("Q", "") || "-";
+      if (fromCoord.r === 7 && fromCoord.f === 7) this.castling = this.castling.replace("K", "");
+      if (fromCoord.r === 7 && fromCoord.f === 0) this.castling = this.castling.replace("Q", "");
     } else if (piece === "r") {
-      if (fromCoord.r === 0 && fromCoord.f === 7) this.castling = this.castling.replace("k", "") || "-";
-      if (fromCoord.r === 0 && fromCoord.f === 0) this.castling = this.castling.replace("q", "") || "-";
+      if (fromCoord.r === 0 && fromCoord.f === 7) this.castling = this.castling.replace("k", "");
+      if (fromCoord.r === 0 && fromCoord.f === 0) this.castling = this.castling.replace("q", "");
     }
+
+    // Снимаем право рокировки при взятии ладьи на угловой клетке
+    if (toCoord.r === 7 && toCoord.f === 7) this.castling = this.castling.replace("K", "");
+    if (toCoord.r === 7 && toCoord.f === 0) this.castling = this.castling.replace("Q", "");
+    if (toCoord.r === 0 && toCoord.f === 7) this.castling = this.castling.replace("k", "");
+    if (toCoord.r === 0 && toCoord.f === 0) this.castling = this.castling.replace("q", "");
+    if (!this.castling) this.castling = "-";
 
     this.turn = opponentColor;
     if (this.turn === "w") this.full++;
-    this.half = (piece === "P" || piece === "p" || savedTarget) ? 0 : this.half + 1;
+    this.half = (lowerPiece === "p" || savedTarget || epCapturedPos) ? 0 : this.half + 1;
 
     return true;
   }
@@ -1012,7 +1200,10 @@ class ChessSimulator {
   }
 }
 
-function isPositionOutdated(fen, myColor) {
+function isPositionOutdated(fen, myColor, reqId) {
+  if (reqId !== undefined && reqId !== currentRequestId) return true;
+  if (!isAutoHintEnabled) return true;
+
   const liveBoard = getBoardElement();
   if (!liveBoard) return true;
   const liveFEN = parseBoardToFEN(liveBoard);
@@ -1030,11 +1221,13 @@ function isPositionOutdated(fen, myColor) {
   return false;
 }
 
-
 function setPlatform(platform) {
   if (platform !== "chesscom" && platform !== "lichess") return;
   currentPlatform = platform;
-  localStorage.setItem("chess_platform", currentPlatform);
+  const host = typeof location !== "undefined" ? location.hostname : "";
+  if (!host.includes("chess.com") && !host.includes("lichess.org")) {
+    safeSetStorage("chess_platform", currentPlatform);
+  }
 
   const widget = document.getElementById("chess-assistant-widget");
   if (widget) {
@@ -1043,7 +1236,9 @@ function setPlatform(platform) {
     });
   }
 
+  ++currentRequestId;
   clearOverlay();
+  lastRenderedState = null;
   lastAnalyzedFEN = "";
   lastBoardFlipped = null;
   currentObservedBoard = null;
@@ -1057,27 +1252,36 @@ function setPlatform(platform) {
 }
 
 // ==========================================
-// 2. Связь с Background
+// 2. Связь с Background и форматирование оценок
 // ==========================================
 function requestMovesFromBackground(fen, cfg = {}) {
   return new Promise((resolve) => {
     let resolved = false;
+    const defaultPV = IS_MOBILE_BUILD
+      ? (amateurModeEnabled ? 5 : 1)
+      : (arrowMode === "multi5" ? 5 : (arrowMode === "multi1" ? 1 : 3));
+
     const payload = {
       type: "ANALYZE_POSITION",
       fen,
       depth: cfg.depth || null,
       movetime: cfg.movetime || null,
-      multiPV: cfg.multiPV || (arrowMode === "multi5" ? 5 : (arrowMode === "multi1" ? 1 : 3))
+      multiPV: cfg.multiPV || defaultPV
     };
 
     extApi.runtime.sendMessage(payload, (res) => {
+      if (extApi.runtime && extApi.runtime.lastError) {
+        // Предотвращаем предупреждение консоли при перезагрузке страницы/расширения
+      }
       if (!resolved) {
         resolved = true;
         resolve(res || { cancelled: false, moves: [], ponderMove: null, bestMove: null, bestScore: null });
       }
     });
 
-    const timeoutWait = cfg.movetime ? Math.max(3000, cfg.movetime + 3500) : (cfg.depth ? Math.max(12000, cfg.depth * 800) : 16000);
+    const timeoutWait = cfg.movetime
+      ? Math.max(5000, cfg.movetime + 4500)
+      : (cfg.depth ? Math.max(12000, cfg.depth * 800) : 16000);
     setTimeout(() => {
       if (!resolved) {
         resolved = true;
@@ -1085,6 +1289,17 @@ function requestMovesFromBackground(fen, cfg = {}) {
       }
     }, timeoutWait);
   });
+}
+
+function normalizeScoreToWhite(score, activeTurn = "w") {
+  if (!score) return null;
+  if (activeTurn === "w") {
+    return { type: score.type, value: score.value };
+  }
+  return {
+    type: score.type,
+    value: score.value === 0 ? 0 : -score.value
+  };
 }
 
 function formatScore(score, matePrefix = "M") {
@@ -1099,7 +1314,7 @@ function formatScore(score, matePrefix = "M") {
 
 function getAdvantageText(score, activeTurn, isFlipped) {
   if (!score) return t("equalPos");
-  let cp = score.type === "mate" ? (score.value > 0 ? 10000 : -10000) : score.value;
+  const cp = score.type === "mate" ? (score.value > 0 ? 10000 : -10000) : score.value;
   const whiteCp = activeTurn === "w" ? cp : -cp;
   const myColor = isFlipped ? "b" : "w";
 
@@ -1114,6 +1329,8 @@ function getAdvantageText(score, activeTurn, isFlipped) {
 }
 
 function updateEvalBar(score, activeTurn) {
+  lastEvalState = { score: score || null, activeTurn: activeTurn || "w" };
+
   let cp = 0;
   if (score) {
     if (score.type === "mate") {
@@ -1134,11 +1351,7 @@ function updateEvalBar(score, activeTurn) {
   const widgetScore = document.querySelector(".widget-eval-score");
   const widgetDesc = document.querySelector(".widget-eval-desc");
 
-  // Нормализуем оценку со стороны белых (общепринятый шахматный стандарт шкалы оценки)
-  const normalizedScore = score ? {
-    type: score.type,
-    value: activeTurn === "w" ? score.value : -score.value
-  } : null;
+  const normalizedScore = normalizeScoreToWhite(score, activeTurn);
   const scoreText = formatScore(normalizedScore);
   const advText = getAdvantageText(score, activeTurn, isFlipped);
 
@@ -1161,7 +1374,7 @@ function getOrCreateCanvas(board) {
   }
 
   const rect = board.getBoundingClientRect();
-  const dpr = window.devicePixelRatio || 1;
+  const dpr = IS_MOBILE_BUILD ? 1.0 : (window.devicePixelRatio || 1);
   const targetWidth = Math.round(rect.width * dpr);
   const targetHeight = Math.round(rect.height * dpr);
 
@@ -1174,7 +1387,6 @@ function getOrCreateCanvas(board) {
 }
 
 function clearOverlay() {
-  hasOverlayDrawings = false;
   const canvas = document.getElementById("chess-canvas-overlay");
   if (canvas) {
     const ctx = canvas.getContext("2d");
@@ -1200,8 +1412,8 @@ function drawRoundedRect(ctx, x, y, w, h, r) {
 function drawCornerBrackets(ctx, x, y, size, cornerLen, r, color, dpr) {
   ctx.save();
   ctx.strokeStyle = color;
-  ctx.shadowColor = "rgba(0, 0, 0, 0.5)";
-  ctx.shadowBlur = 3 * dpr;
+  ctx.shadowColor = IS_MOBILE_BUILD ? "transparent" : "rgba(0, 0, 0, 0.5)";
+  ctx.shadowBlur = IS_MOBILE_BUILD ? 0 : 3 * dpr;
   ctx.lineWidth = 2.8 * dpr;
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
@@ -1230,8 +1442,8 @@ function drawCornerBrackets(ctx, x, y, size, cornerLen, r, color, dpr) {
 function drawCircleReticle(ctx, cx, cy, radius, color, dpr) {
   ctx.save();
   ctx.strokeStyle = color;
-  ctx.shadowColor = "rgba(0, 0, 0, 0.5)";
-  ctx.shadowBlur = 3 * dpr;
+  ctx.shadowColor = IS_MOBILE_BUILD ? "transparent" : "rgba(0, 0, 0, 0.5)";
+  ctx.shadowBlur = IS_MOBILE_BUILD ? 0 : 3 * dpr;
   ctx.lineWidth = 2.5 * dpr;
   ctx.beginPath();
   ctx.arc(cx, cy, radius, 0, Math.PI * 2);
@@ -1250,7 +1462,7 @@ function drawSquareMarker(ctx, sqBox, color, dpr) {
 
 function getSquareBox(sq, squareSize, dpr, isFlipped) {
   const colNum = sq.charCodeAt(0) - 96;
-  const rowNum = parseInt(sq[1]);
+  const rowNum = parseInt(sq[1], 10);
   const col = isFlipped ? 9 - colNum : colNum;
   const row = isFlipped ? rowNum : 9 - rowNum;
   return {
@@ -1273,8 +1485,8 @@ function drawArrow(ctx, start, end, color, dpr) {
   ctx.save();
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
-  ctx.shadowColor = "rgba(0, 0, 0, 0.45)";
-  ctx.shadowBlur = 3.5 * dpr;
+  ctx.shadowColor = IS_MOBILE_BUILD ? "transparent" : "rgba(0, 0, 0, 0.45)";
+  ctx.shadowBlur = IS_MOBILE_BUILD ? 0 : 3.5 * dpr;
   ctx.strokeStyle = color;
   ctx.fillStyle = color;
   ctx.lineWidth = lineWidth;
@@ -1304,8 +1516,8 @@ function drawArrow(ctx, start, end, color, dpr) {
   ctx.restore();
 }
 
-function drawBadge(ctx, end, score, color, dpr, badgePosition, extraY = 0) {
-  const text = formatScore(score);
+function drawBadge(ctx, end, score, color, dpr, badgePosition, extraY = 0, activeTurn = "w") {
+  const text = formatScore(normalizeScoreToWhite(score, activeTurn));
   if (!text) return;
 
   ctx.save();
@@ -1313,7 +1525,6 @@ function drawBadge(ctx, end, score, color, dpr, badgePosition, extraY = 0) {
 
   const textMetrics = ctx.measureText(text);
   const paddingX = 5.5 * dpr;
-  const paddingY = 2.5 * dpr;
   const badgeWidth = textMetrics.width + paddingX * 2;
   const badgeHeight = 16 * dpr;
 
@@ -1344,8 +1555,8 @@ function drawBadge(ctx, end, score, color, dpr, badgePosition, extraY = 0) {
 
   drawRoundedRect(ctx, badgeX, badgeY, badgeWidth, badgeHeight, 5 * dpr);
   ctx.fillStyle = "rgba(10, 8, 16, 0.94)";
-  ctx.shadowColor = "rgba(0, 0, 0, 0.55)";
-  ctx.shadowBlur = 4 * dpr;
+  ctx.shadowColor = IS_MOBILE_BUILD ? "transparent" : "rgba(0, 0, 0, 0.55)";
+  ctx.shadowBlur = IS_MOBILE_BUILD ? 0 : 4 * dpr;
   ctx.fill();
 
   ctx.shadowBlur = 0;
@@ -1361,7 +1572,7 @@ function drawBadge(ctx, end, score, color, dpr, badgePosition, extraY = 0) {
   ctx.restore();
 }
 
-function drawMulti5Badges(ctx, items, dpr) {
+function drawMulti5Badges(ctx, items, dpr, activeTurn = "w") {
   ctx.save();
   const scoreFont = `bold ${Math.round(11 * dpr)}px ui-monospace, SFMono-Regular, monospace`;
   const digitFont = `900 ${Math.round(10.5 * dpr)}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
@@ -1386,7 +1597,7 @@ function drawMulti5Badges(ctx, items, dpr) {
 
   ctx.font = scoreFont;
   const badges = items.map((item) => {
-    const scoreStr = formatScore(item.score, "#M");
+    const scoreStr = formatScore(normalizeScoreToWhite(item.score, activeTurn), "#M");
     const rankStr = String(item.rankIndex + 1);
     const scoreWidth = scoreStr ? ctx.measureText(scoreStr).width : 0;
     const w = scoreStr ? padLeft + circleDiam + gapAfterCircle + scoreWidth + padRight : badgeH;
@@ -1436,8 +1647,8 @@ function drawMulti5Badges(ctx, items, dpr) {
 
     drawRoundedRect(ctx, b.rect.x, b.rect.y, b.rect.w, b.rect.h, b.rect.h / 2);
     ctx.fillStyle = b.isBest ? "#09090b" : "#18181b";
-    ctx.shadowColor = "rgba(0, 0, 0, 0.7)";
-    ctx.shadowBlur = 4 * dpr;
+    ctx.shadowColor = IS_MOBILE_BUILD ? "transparent" : "rgba(0, 0, 0, 0.7)";
+    ctx.shadowBlur = IS_MOBILE_BUILD ? 0 : 4 * dpr;
     ctx.fill();
 
     ctx.shadowBlur = 0;
@@ -1469,8 +1680,8 @@ function drawMulti5Badges(ctx, items, dpr) {
   ctx.restore();
 }
 
-function drawAllVisuals({ moves = [], premoveMove = null } = {}) {
-  lastRenderedState = { moves, premoveMove };
+function drawAllVisuals({ moves = [], premoveMove = null, activeTurn = "w", oppMove = null } = {}) {
+  lastRenderedState = { moves, premoveMove, activeTurn, oppMove };
 
   const board = getBoardElement();
   if (!board) return;
@@ -1479,7 +1690,7 @@ function drawAllVisuals({ moves = [], premoveMove = null } = {}) {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
 
-  const dpr = window.devicePixelRatio || 1;
+  const dpr = IS_MOBILE_BUILD ? 1.0 : (window.devicePixelRatio || 1);
   const isFlipped = isBoardFlipped(board);
   const squareSize = canvas.width / 8;
 
@@ -1489,11 +1700,30 @@ function drawAllVisuals({ moves = [], premoveMove = null } = {}) {
   const hasPremove = premoveMove && premoveMove.length >= 4;
 
   if (validMoves.length === 0 && !hasPremove) {
-    hasOverlayDrawings = false;
     return;
   }
 
-  hasOverlayDrawings = true;
+  // На мобильной версии всегда показываем 1 самую чёткую стрелку
+  if (IS_MOBILE_BUILD) {
+    if (hasPremove) {
+      const pStart = getSquareBox(premoveMove.slice(0, 2), squareSize, dpr, isFlipped);
+      const pEnd = getSquareBox(premoveMove.slice(2, 4), squareSize, dpr, isFlipped);
+      drawSquareMarker(ctx, pStart, PREMOVE_COLOR, dpr);
+      drawSquareMarker(ctx, pEnd, PREMOVE_COLOR, dpr);
+      drawArrow(ctx, pStart, pEnd, PREMOVE_COLOR, dpr);
+    } else if (validMoves.length > 0) {
+      const best = validMoves[0];
+      const start = getSquareBox(best.move.slice(0, 2), squareSize, dpr, isFlipped);
+      const end = getSquareBox(best.move.slice(2, 4), squareSize, dpr, isFlipped);
+      const arrowColor = "#000000";
+
+      drawSquareMarker(ctx, start, arrowColor, dpr);
+      drawSquareMarker(ctx, end, arrowColor, dpr);
+      drawArrow(ctx, start, end, arrowColor, dpr);
+      drawBadge(ctx, end, best.score, arrowColor, dpr, "top-center", 0, activeTurn);
+    }
+    return;
+  }
 
   if (arrowMode === "multi5" && validMoves.length > 0) {
     const items = validMoves.slice(0, 5).map((m, idx) => ({
@@ -1520,7 +1750,7 @@ function drawAllVisuals({ moves = [], premoveMove = null } = {}) {
       drawArrow(ctx, pStart, pEnd, PREMOVE_COLOR, dpr);
     }
 
-    drawMulti5Badges(ctx, items, dpr);
+    drawMulti5Badges(ctx, items, dpr, activeTurn);
     return;
   }
 
@@ -1534,7 +1764,7 @@ function drawAllVisuals({ moves = [], premoveMove = null } = {}) {
     drawSquareMarker(ctx, start, arrowColor, dpr);
     drawSquareMarker(ctx, end, arrowColor, dpr);
     drawArrow(ctx, start, end, arrowColor, dpr);
-    drawBadge(ctx, end, best.score, arrowColor, dpr, "top-center", 0);
+    drawBadge(ctx, end, best.score, arrowColor, dpr, "top-center", 0, activeTurn);
 
     if (hasPremove) {
       const pStart = getSquareBox(premoveMove.slice(0, 2), squareSize, dpr, isFlipped);
@@ -1546,7 +1776,7 @@ function drawAllVisuals({ moves = [], premoveMove = null } = {}) {
     return;
   }
 
-  // Режим 1: 3 стрелки (чёрная / серая / белая)
+  // Режим: 3 стрелки (чёрная / серая / белая)
   if (validMoves.length > 0) {
     const top3 = validMoves.slice(0, 3);
     const t1 = top3[0] ? top3[0].move.slice(2, 4) : "";
@@ -1583,7 +1813,7 @@ function drawAllVisuals({ moves = [], premoveMove = null } = {}) {
       drawArrow(ctx, items[i].start, items[i].end, items[i].color, dpr);
     }
     for (let i = items.length - 1; i >= 0; i--) {
-      drawBadge(ctx, items[i].end, items[i].score, items[i].color, dpr, items[i].badgePos, items[i].extraY);
+      drawBadge(ctx, items[i].end, items[i].score, items[i].color, dpr, items[i].badgePos, items[i].extraY, activeTurn);
     }
   }
 
@@ -1597,7 +1827,7 @@ function drawAllVisuals({ moves = [], premoveMove = null } = {}) {
 }
 
 // ==========================================
-// 4. Поворот экрана и ресайз (Исправление бага!)
+// 4. Поворот экрана, ресайз и перетаскивание виджета
 // ==========================================
 function handleResizeOrOrientation() {
   const board = getBoardElement();
@@ -1608,14 +1838,22 @@ function handleResizeOrOrientation() {
     }
   }
 }
-window.addEventListener("resize", handleResizeOrOrientation);
-window.addEventListener("orientationchange", () => {
-  setTimeout(handleResizeOrOrientation, 150);
-});
 
-// Глобальная поддержка перетаскивания (мышь + сенсор) без утечки слушателей
-let startX = 0, startY = 0, startRight = 14, startBottom = 12;
-let isWidgetDragging = false, hasWidgetDragged = false;
+function observeBoardResize(board) {
+  if (typeof ResizeObserver === "undefined" || !board) return;
+  if (boardResizeObserver) boardResizeObserver.disconnect();
+  boardResizeObserver = new ResizeObserver(() => {
+    handleResizeOrOrientation();
+  });
+  boardResizeObserver.observe(board);
+}
+
+let startX = 0;
+let startY = 0;
+let startRight = 14;
+let startBottom = 12;
+let isWidgetDragging = false;
+let hasWidgetDragged = false;
 
 function clampWidgetPosition() {
   const widget = document.getElementById("chess-assistant-widget");
@@ -1637,17 +1875,14 @@ function clampWidgetPosition() {
   widget.style.setProperty("bottom", `${clampedBottom}px`, "important");
   widget.style.setProperty("left", "auto", "important");
   widget.style.setProperty("top", "auto", "important");
-  try {
-    localStorage.setItem("chess_widget_pos_r", widget.style.right);
-    localStorage.setItem("chess_widget_pos_b", widget.style.bottom);
-  } catch (err) {}
+  safeSetStorage("chess_widget_pos_r", widget.style.right);
+  safeSetStorage("chess_widget_pos_b", widget.style.bottom);
 }
 
 function onDragStart(clientX, clientY, target) {
   const widget = document.getElementById("chess-assistant-widget");
   if (!widget) return false;
 
-  // Если виджет свернут в кнопку — разрешено тащить за любую точку всей плавающей кнопки
   if (isMinimized) {
     startX = clientX;
     startY = clientY;
@@ -1659,21 +1894,16 @@ function onDragStart(clientX, clientY, target) {
     return true;
   }
 
-  // Не начинаем перетаскивание при клике на интерактивные кнопки, ссылки, поля ввода и чекбоксы (когда меню раскрыто)
   if (target && target.closest && target.closest("button, input, a, select, textarea, label, .btn-speed-pill, .btn-style-pill, .btn-platform-pill")) {
     return false;
   }
 
-  // Если меню открыто:
-  // Разрешаем тащить за ручку перетаскивания (.widget-drag-handle), за угловые маркеры (.widget-corner-grip),
-  // заголовок (.widget-header), шапку настроек (.settings-panel-header)
-  // или за любой из 4-х углов открытого меню (сенсорная зона 44px)
   const isHeader = target && target.closest && target.closest(".widget-header, .settings-panel-header, .widget-drag-handle, .widget-corner-grip");
   const rect = widget.getBoundingClientRect();
   const isTopZone = (clientY - rect.top < 42) &&
                     !(target && target.closest && target.closest("#chess-assistant-output, .chess-watermark, .platform-switch-row, .speed-modes-grid, .chess-controls-group"));
 
-  const cornerSize = 44; // 44px удобная сенсорная зона под палец в каждом углу меню
+  const cornerSize = 44;
   const isTopLeft = (clientX - rect.left <= cornerSize) && (clientY - rect.top <= cornerSize);
   const isTopRight = (rect.right - clientX <= cornerSize) && (clientY - rect.top <= cornerSize);
   const isBottomLeft = (clientX - rect.left <= cornerSize) && (rect.bottom - clientY <= cornerSize);
@@ -1720,12 +1950,9 @@ function onDragEnd() {
   if (widget) {
     widget.style.transition = "";
     if (wasDragged) {
-      try {
-        localStorage.setItem("chess_widget_pos_r", widget.style.right);
-        localStorage.setItem("chess_widget_pos_b", widget.style.bottom);
-      } catch (err) {}
+      safeSetStorage("chess_widget_pos_r", widget.style.right);
+      safeSetStorage("chess_widget_pos_b", widget.style.bottom);
     } else if (isMinimized) {
-      // Тап / клик по свернутой кнопке без смещения — разворачиваем меню!
       isMinimized = false;
       widget.classList.remove("minimized");
       const minBtn = document.getElementById("btn-minimize-widget");
@@ -1740,32 +1967,6 @@ function onDragEnd() {
     hasWidgetDragged = false;
   }, 100);
 }
-
-window.addEventListener("mousemove", (e) => {
-  if (isWidgetDragging) onDragMove(e.clientX, e.clientY);
-});
-window.addEventListener("mouseup", () => {
-  if (isWidgetDragging) onDragEnd();
-});
-window.addEventListener("touchmove", (e) => {
-  if (isWidgetDragging && e.touches.length === 1) {
-    if (e.cancelable) e.preventDefault(); // Останавливаем скролл страницы на телефоне во время перетаскивания
-    onDragMove(e.touches[0].clientX, e.touches[0].clientY);
-  }
-}, { passive: false });
-window.addEventListener("touchend", () => {
-  if (isWidgetDragging) onDragEnd();
-}, { passive: true });
-window.addEventListener("touchcancel", () => {
-  if (isWidgetDragging) onDragEnd();
-}, { passive: true });
-
-window.addEventListener("pointerdown", (e) => {
-  const board = getBoardElement();
-  if (board && (board.contains(e.target) || (e.target.closest && e.target.closest("wc-chess-board, chess-board, cg-board, .cg-wrap")))) {
-    isUserInteractingWithBoard = true;
-  }
-}, { capture: true, passive: true });
 
 function handleBoardInteractionEnd() {
   if (isUserInteractingWithBoard) {
@@ -1782,17 +1983,14 @@ function handleBoardInteractionEnd() {
   }, 80);
 }
 
-window.addEventListener("pointerup", handleBoardInteractionEnd, { capture: true, passive: true });
-window.addEventListener("pointercancel", handleBoardInteractionEnd, { capture: true, passive: true });
-window.addEventListener("mouseup", handleBoardInteractionEnd, { capture: true, passive: true });
-window.addEventListener("touchend", handleBoardInteractionEnd, { capture: true, passive: true });
-
 // ==========================================
 // 5. Запрос лучших ходов и вывод
 // ==========================================
 async function requestBestMoves() {
   const board = getBoardElement();
   const output = document.getElementById("chess-assistant-output");
+
+  if (!isAutoHintEnabled) return;
 
   if (!board) {
     if (output) output.innerText = t("boardNotFound");
@@ -1807,27 +2005,31 @@ async function requestBestMoves() {
   if (fen === lastAnalyzedFEN) return;
   lastAnalyzedFEN = fen;
 
+  const reqId = ++currentRequestId;
+
   const activeTurn = fen.includes(" w ") ? "w" : "b";
   const isFlipped = isBoardFlipped(board);
   lastBoardFlipped = isFlipped;
   const myColor = isFlipped ? "b" : "w";
   const isOpponentTurn = activeTurn !== myColor;
 
-  if (isOpponentTurn) {
-    // При выключенном тумблере премувов не запускаем фоновый расчёт веток премува во время хода соперника
+  if (isOpponentTurn && isOnlyMyTurnEnabled) {
     if (!isPremovesEnabled) {
       clearOverlay();
+      lastRenderedState = null;
       if (output) output.innerText = t("oppTurnWait");
       return;
     }
 
     clearOverlay();
+    lastRenderedState = null;
     if (output) output.innerText = t("oppTurnPremove");
 
     // 1. Запрашиваем MultiPV 5 для текущей позиции соперника
     const oppRes = await requestMovesFromBackground(fen, { movetime: 1800, depth: 14, multiPV: 5 });
 
-    if (isPositionOutdated(fen, myColor)) return;
+    if (reqId !== currentRequestId || !isAutoHintEnabled || !isPremovesEnabled || !isOnlyMyTurnEnabled) return;
+    if (isPositionOutdated(fen, myColor, reqId)) return;
 
     const oppMoves = oppRes?.moves || [];
     if (oppMoves.length === 0) {
@@ -1835,7 +2037,6 @@ async function requestBestMoves() {
       return;
     }
 
-    // Кандидат на премув от 1-й линии соперника (ponder)
     const candidatePremove = oppMoves[0].ponder;
     if (!candidatePremove || candidatePremove.length < 4) {
       if (output) output.innerText = t("oppTurnWait");
@@ -1847,16 +2048,15 @@ async function requestBestMoves() {
     const oppCp = bestOppScore?.type === "mate"
       ? (bestOppScore.value > 0 ? 10000 : -10000)
       : (bestOppScore?.value || 0);
-    // Наш перевес = -oppCp
     const E_current = -oppCp;
 
-    // Фильтр: если текущая позиция уже в минусе (< 0.0), безопасный премув невозможен
+    // Если текущая позиция уже в минусе (< 0.0), безопасный премув невозможен
     if (E_current < 0) {
       if (output) output.innerText = t("oppTurnWait");
       return;
     }
 
-    // 2. Двухэтапная проверка каждого из топ-3..5 ходов соперника
+    // 2. Двухэтапная проверка каждого из топ-5 ходов соперника
     const branchesToCheck = oppMoves.slice(0, 5);
     let worstAfterPremove = E_current;
     let isPremoveSafe = true;
@@ -1874,7 +2074,6 @@ async function requestBestMoves() {
 
       const ourPiece = sim.getPiece(fromCoord.r, fromCoord.f);
       if (!ourPiece) {
-        // Соперник срубил фигуру нашего премува
         isPremoveSafe = false;
         break;
       }
@@ -1883,25 +2082,21 @@ async function requestBestMoves() {
 
       const ourOk = sim.makeMove(candidatePremove);
       if (!ourOk) {
-        // Нелегальный ход (шах, перекрытие и т.д.)
         isPremoveSafe = false;
         break;
       }
 
-      // Критический фильтр против ловушек
       const oppColor = myColor === "w" ? "b" : "w";
       if (targetPieceBeforeOurMove) {
         const ourVal = getPieceValue(ourPiece);
         const targetVal = getPieceValue(targetPieceBeforeOurMove);
         const isTargetProtectedByOpp = sim.isAttacked(toCoord.r, toCoord.f, oppColor);
         if (isTargetProtectedByOpp && ourVal > targetVal) {
-          // Невыгодный размен (зевок старшей фигуры)
           isPremoveSafe = false;
           break;
         }
       }
 
-      // Оценка ветки со стороны игрока
       let E_branch = E_current;
       if (opp.ponder === candidatePremove) {
         const bScore = opp.score;
@@ -1910,7 +2105,8 @@ async function requestBestMoves() {
       } else {
         const branchFEN = sim.toFEN();
         const branchRes = await requestMovesFromBackground(branchFEN, { movetime: 100, depth: 8, multiPV: 1 });
-        if (isPositionOutdated(fen, myColor)) return;
+        if (reqId !== currentRequestId || !isAutoHintEnabled || !isPremovesEnabled || !isOnlyMyTurnEnabled) return;
+        if (isPositionOutdated(fen, myColor, reqId)) return;
         const bScore = branchRes?.moves[0]?.score;
         if (bScore) {
           const bCp = bScore.type === "mate" ? (bScore.value > 0 ? 10000 : -10000) : bScore.value;
@@ -1918,13 +2114,7 @@ async function requestBestMoves() {
         }
       }
 
-      // Фильтр «без ухода в минус в любом случае»
-      if (E_branch < 0) {
-        isPremoveSafe = false;
-        break;
-      }
-
-      if (E_current - E_branch > 30) {
+      if (E_branch < 0 || E_current - E_branch > 30) {
         isPremoveSafe = false;
         break;
       }
@@ -1934,14 +2124,18 @@ async function requestBestMoves() {
       }
     }
 
+    if (reqId !== currentRequestId || !isAutoHintEnabled || !isPremovesEnabled || !isOnlyMyTurnEnabled) return;
+
     if (!isPremoveSafe || worstAfterPremove < 0 || (E_current - worstAfterPremove > 30)) {
       clearOverlay();
+      lastRenderedState = null;
       if (output) output.innerText = t("oppTurnWait");
       return;
     }
 
     // Все проверки пройдены: премув безопасен!
-    drawAllVisuals({ moves: [], premoveMove: candidatePremove });
+    updateEvalBar(bestOppScore, activeTurn);
+    drawAllVisuals({ moves: [], premoveMove: candidatePremove, activeTurn, oppMove: oppMoves[0].move });
     if (output) {
       const pm = candidatePremove;
       const opp = oppMoves[0].move;
@@ -1951,10 +2145,8 @@ async function requestBestMoves() {
     return;
   }
 
-  let cfg = SPEED_MODES[speedMode] || SPEED_MODES.bullet;
+  let cfg = SPEED_MODES[speedMode] || (IS_MOBILE_BUILD ? SPEED_MODES.rapid : SPEED_MODES.bullet);
   const turnName = activeTurn === "w" ? t("whiteGen") : t("blackGen");
-
-  // Легит-режимы: пониженная глубина и умная пауза
   const curLegitConfig = AMATEUR_CONFIGS[amateurMode] || AMATEUR_CONFIGS.legit1;
 
   if (amateurModeEnabled) {
@@ -1970,24 +2162,29 @@ async function requestBestMoves() {
     }
   }
 
-  const targetMultiPV = amateurModeEnabled ? 5 : (arrowMode === "multi5" ? 5 : (arrowMode === "multi3" ? 3 : 1));
+  const targetMultiPV = IS_MOBILE_BUILD
+    ? (amateurModeEnabled ? 5 : 1)
+    : (amateurModeEnabled ? 5 : (arrowMode === "multi5" ? 5 : (arrowMode === "multi3" ? 3 : 1)));
+
   const res = await requestMovesFromBackground(fen, {
     ...cfg,
     multiPV: targetMultiPV
   });
 
-  // Легит-режим: «человеческая пауза» (время раздумий) перед показом стрелки
+  if (reqId !== currentRequestId || !isAutoHintEnabled) return;
+
+  // Легит-режим: естественная пауза перед показом стрелки
   if (amateurModeEnabled && !isOpponentTurn) {
     const baseDelay = parseInt(legitDelay, 10) || 1000;
-    // Небольшой естественный разброс (±12%), чтобы время не выглядело роботизированным
     const jitter = (Math.random() * 0.24 - 0.12) * baseDelay;
     const delay = Math.max(15, Math.round(baseDelay + jitter));
-    await new Promise(r => setTimeout(r, delay));
-    if (!isAutoHintEnabled) {
-      clearOverlay();
+    await new Promise((r) => setTimeout(r, delay));
+
+    if (reqId !== currentRequestId || !isAutoHintEnabled) {
+      if (!isAutoHintEnabled) clearOverlay();
       return;
     }
-    // Позиция могла смениться за время паузы — проверяем
+
     const liveBoard = getBoardElement();
     if (liveBoard) {
       const liveFEN = parseBoardToFEN(liveBoard);
@@ -1999,10 +2196,11 @@ async function requestBestMoves() {
     }
   }
 
-  onAnalysisReceived(res, fen, isOpponentTurn);
+  onAnalysisReceived(res, fen, isOpponentTurn, reqId);
 }
 
 function formatMovesLog(moves, activeTurn, isFlipped) {
+  if (!moves || moves.length === 0) return t("noMovesMsg");
   const myColor = isFlipped ? "b" : "w";
   const who = (score) => {
     if (!score) return "";
@@ -2012,17 +2210,26 @@ function formatMovesLog(moves, activeTurn, isFlipped) {
     return isMine ? t("inYourFavor") : t("opponentAdvantage");
   };
 
+  if (IS_MOBILE_BUILD) {
+    const m = moves[0];
+    const normalized = normalizeScoreToWhite(m.score, activeTurn);
+    const s = formatScore(normalized, "M");
+    const scorePart = s ? ` [${s} • ${who(m.score)}]` : "";
+    return `${t("bestMovePhone")} ${m.move.slice(0, 2).toUpperCase()} ➔ ${m.move.slice(2, 4).toUpperCase()}${scorePart}`;
+  }
+
   if (arrowMode === "multi1") {
     const m = moves[0];
-    if (!m) return t("noMovesMsg");
-    const s = formatScore(m.score, "M");
+    const normalized = normalizeScoreToWhite(m.score, activeTurn);
+    const s = formatScore(normalized, "M");
     const scorePart = s ? ` [${s} • ${who(m.score)}]` : "";
     return `#1: ${m.move.slice(0, 2).toUpperCase()} ➔ ${m.move.slice(2, 4).toUpperCase()}${scorePart}`;
   }
 
   if (arrowMode === "multi5") {
     return moves.slice(0, 5).map((m, i) => {
-      const s = formatScore(m.score, "#M");
+      const normalized = normalizeScoreToWhite(m.score, activeTurn);
+      const s = formatScore(normalized, "#M");
       const scorePart = s ? ` [${s} • ${who(m.score)}]` : "";
       return `#${i + 1}: ${m.move.slice(0, 2).toUpperCase()} ➔ ${m.move.slice(2, 4).toUpperCase()}${scorePart}`;
     }).join("\n");
@@ -2030,14 +2237,19 @@ function formatMovesLog(moves, activeTurn, isFlipped) {
 
   const labels = [t("label1st"), t("label2nd"), t("label3rd")];
   return moves.slice(0, 3).map((m, i) => {
-    const s = formatScore(m.score, "M");
+    const normalized = normalizeScoreToWhite(m.score, activeTurn);
+    const s = formatScore(normalized, "M");
     const scorePart = s ? ` [${s} • ${who(m.score)}]` : "";
     return `${labels[i]}: ${m.move.slice(0, 2).toUpperCase()} ➔ ${m.move.slice(2, 4).toUpperCase()}${scorePart}`;
   }).join("\n");
 }
 
-function onAnalysisReceived(res, fen, isOpponentTurn) {
-  if (!res || res.cancelled) return;
+function onAnalysisReceived(res, fen, isOpponentTurn, reqId) {
+  if (reqId !== undefined && reqId !== currentRequestId) return;
+  if (!res || res.cancelled) {
+    if (lastAnalyzedFEN === fen) lastAnalyzedFEN = "";
+    return;
+  }
   if (!isAutoHintEnabled) {
     clearOverlay();
     return;
@@ -2060,7 +2272,6 @@ function onAnalysisReceived(res, fen, isOpponentTurn) {
   const isFlipped = isBoardFlipped(board);
   const myColor = isFlipped ? "b" : "w";
 
-  // Если был расчёт хода противника / премува, но на доске уже наш ход — не рисуем премув!
   if (isOpponentTurn) {
     const liveTurn = detectTurn(board);
     if (liveTurn === myColor) {
@@ -2073,47 +2284,29 @@ function onAnalysisReceived(res, fen, isOpponentTurn) {
   const moves = res.moves || [];
   const bestScore = moves[0]?.score || res.bestScore || null;
 
-  // === РЕЖИМ ЛЮБИТЕЛЯ ===
-  // Если включён, иногда показываем не лучший ход, а чуть похуже
   let displayMoves = moves;
   if (amateurModeEnabled && moves.length > 0 && !isOpponentTurn) {
     const picked = amateurPickMove(moves);
     if (picked && picked.move !== moves[0].move) {
-      // Перекладываем выбранный ход на первое место (остальные убираем из подсказки)
       displayMoves = [picked];
       console.log(`[Легит] Выбран ход: ${picked.move} (вместо лучшего ${moves[0].move})`);
     } else {
-      displayMoves = [moves[0]]; // показываем только 1 стрелку в режиме любителя
+      displayMoves = [moves[0]];
     }
-  }
-
-  if (isOpponentTurn && isOnlyMyTurnEnabled) {
-    if (res.ponderMove) {
-      updateEvalBar(bestScore, activeTurn);
-      drawAllVisuals({ moves: [], premoveMove: res.ponderMove });
-      if (output) {
-        const pm = res.ponderMove;
-        const opp = res.bestMove;
-        const oppNote = opp ? ` (${t("premoveOnOpp")} ${opp.slice(0, 2).toUpperCase()}➔${opp.slice(2, 4).toUpperCase()})` : "";
-        output.innerText = `${t("premoveLabel")} ${pm.slice(0, 2).toUpperCase()} ➔ ${pm.slice(2, 4).toUpperCase()}${oppNote}`;
-      }
-    } else {
-      clearOverlay();
-      if (output) output.innerText = t("oppTurnWait");
-    }
-    return;
   }
 
   if (moves.length === 0) {
     if (output) output.innerText = t("noMovesMsg");
     clearOverlay();
+    lastRenderedState = null;
     return;
   }
 
   updateEvalBar(bestScore, activeTurn);
   drawAllVisuals({
     moves: displayMoves,
-    premoveMove: isOpponentTurn ? res.ponderMove : null
+    premoveMove: isOpponentTurn ? res.ponderMove : null,
+    activeTurn
   });
 
   if (output) {
@@ -2141,13 +2334,16 @@ function setupBoardObserver() {
       boardObserver.disconnect();
     }
     currentObservedBoard = board;
+    observeBoardResize(board);
     lastBoardFlipped = isBoardFlipped(board);
 
-    boardObserver = new MutationObserver((mutations) => {
+    boardObserver = new MutationObserver(() => {
       const nowFlipped = isBoardFlipped(board);
       if (lastBoardFlipped !== null && nowFlipped !== lastBoardFlipped) {
         lastBoardFlipped = nowFlipped;
+        ++currentRequestId;
         clearOverlay();
+        lastRenderedState = null;
         lastAnalyzedFEN = "";
         clearTimeout(debounceTimer);
         if (isAutoHintEnabled) requestBestMoves();
@@ -2157,14 +2353,13 @@ function setupBoardObserver() {
 
       if (!isAutoHintEnabled) return;
 
-      // Если пользователь трогает, удерживает, перетаскивает фигуру или выбирает клетку —
-      // НЕ стираем стрелки и НЕ запускаем расчёт во время удержания!
+      // Если пользователь трогает, удерживает, перетаскивает фигуру или выбирает клетку — не перебиваем стрелки
       if (isInteractingWithBoard(board)) {
         return;
       }
 
       clearTimeout(debounceTimer);
-      const cfg = SPEED_MODES[speedMode] || SPEED_MODES.bullet;
+      const cfg = SPEED_MODES[speedMode] || (IS_MOBILE_BUILD ? SPEED_MODES.rapid : SPEED_MODES.bullet);
       debounceTimer = setTimeout(() => {
         requestBestMoves();
       }, cfg.debounce || 50);
@@ -2201,64 +2396,81 @@ function toggleWidgetMinimize() {
   }
 }
 
-extApi.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.type === "TOGGLE_WIDGET") {
-    toggleWidgetMinimize();
-    sendResponse({ ok: true, isMinimized });
-    return true;
-  }
-});
-
 // ==========================================
 // 7. Фиолетовый пульт управления (UI Widget)
 // ==========================================
+function setLanguage(lang) {
+  if (lang !== "ru" && lang !== "en") return;
+
+  const oldOutput = document.getElementById("chess-assistant-output")?.innerText || "";
+  const oldReady = t("readyMsg");
+  const oldDisabled = t("hintsDisabledMsg");
+  const oldOppWait = t("oppTurnWait");
+  const oldBoardNotFound = t("boardNotFound");
+
+  currentLang = lang;
+  safeSetStorage("chess_lang", currentLang);
+
+  const widget = document.getElementById("chess-assistant-widget");
+  const settingsEl = document.getElementById("chess-settings-panel");
+  const wasSettingsOpen = settingsEl ? settingsEl.style.display !== "none" : false;
+
+  if (widget) {
+    widget.remove();
+    createWidget();
+
+    if (wasSettingsOpen) {
+      const panel = document.getElementById("chess-settings-panel");
+      if (panel) panel.style.display = "block";
+    }
+
+    if (lastEvalState && lastEvalState.score) {
+      updateEvalBar(lastEvalState.score, lastEvalState.activeTurn);
+    }
+
+    const newOut = document.getElementById("chess-assistant-output");
+    if (lastRenderedState && ((lastRenderedState.moves && lastRenderedState.moves.length > 0) || lastRenderedState.premoveMove)) {
+      drawAllVisuals(lastRenderedState);
+      if (newOut) {
+        const board = getBoardElement();
+        const isFlipped = board ? isBoardFlipped(board) : false;
+        if (lastRenderedState.moves && lastRenderedState.moves.length > 0) {
+          let text = formatMovesLog(lastRenderedState.moves, lastRenderedState.activeTurn, isFlipped);
+          const myColor = isFlipped ? "b" : "w";
+          const isOppTurn = lastRenderedState.activeTurn !== myColor;
+          if (amateurModeEnabled && !isOppTurn) {
+            text = `${t("amateurModeOn")}\n` + text;
+          }
+          newOut.innerText = text;
+        } else if (lastRenderedState.premoveMove) {
+          const pm = lastRenderedState.premoveMove;
+          const opp = lastRenderedState.oppMove;
+          const oppNote = opp ? ` (${t("premoveOnOpp")} ${opp.slice(0, 2).toUpperCase()}➔${opp.slice(2, 4).toUpperCase()})` : "";
+          newOut.innerText = `${t("premoveLabel")} ${pm.slice(0, 2).toUpperCase()} ➔ ${pm.slice(2, 4).toUpperCase()}${oppNote}`;
+        }
+      }
+    } else if (newOut) {
+      if (!isAutoHintEnabled) {
+        newOut.innerText = t("hintsDisabledMsg");
+      } else if (oldOutput === oldOppWait) {
+        newOut.innerText = t("oppTurnWait");
+      } else if (oldOutput === oldBoardNotFound) {
+        newOut.innerText = t("boardNotFound");
+      } else if (oldOutput === oldDisabled) {
+        newOut.innerText = t("hintsDisabledMsg");
+      } else if (oldOutput && oldOutput !== oldReady) {
+        newOut.innerText = oldOutput;
+      }
+    }
+  }
+}
+
 function createWidget() {
   if (document.getElementById("chess-assistant-widget")) return;
 
-  const widget = document.createElement("div");
-  widget.id = "chess-assistant-widget";
-  widget.innerHTML = `
-    <div class="widget-drag-handle" title="Потяни, чтобы переместить"></div>
-    <div class="widget-header">
-      <h3>
-        <span>Stockfish 19</span>
-        <span class="badge">4050 ELO</span>
-        <button id="btn-settings-widget" class="btn-settings" title="Настройки">&#9881;</button>
-      </h3>
-      <div class="header-controls">
-        <button id="btn-minimize-widget" class="btn-minimize" title="Свернуть / Развернуть">_</button>
-      </div>
-    </div>
-
-    <div class="widget-body">
-      <!-- Переключатель платформы (Chess.com / Lichess) -->
-      <div class="platform-switch-row">
-        <button type="button" class="btn-platform-pill ${currentPlatform === 'chesscom' ? 'active' : ''}" data-platform="chesscom" title="Chess.com">
-          Chess.com
-        </button>
-        <button type="button" class="btn-platform-pill ${currentPlatform === 'lichess' ? 'active' : ''}" data-platform="lichess" title="Lichess">
-          Lichess
-        </button>
-      </div>
-
-      <!-- Панель настроек (скрыта по умолчанию, открывается по кнопке) -->
-      <div id="chess-settings-panel" class="widget-settings-panel" style="display: none;">
-        <div class="settings-panel-header">
-          <span>${t("settingsTitle")}</span>
-          <button id="btn-close-settings" class="btn-panel-close" title="Закрыть">&#x2715;</button>
-        </div>
-
-        <!-- 0. Выбор языка (Language: RU / EN) -->
-        <div class="setting-item" style="margin-bottom: 6px;">
-          <div class="setting-label-row">
-            <span>${t("langLabel")}</span>
-          </div>
-          <div class="style-buttons-row">
-            <button type="button" class="btn-style-pill ${currentLang === 'ru' ? 'active' : ''}" data-lang="ru">RU</button>
-            <button type="button" class="btn-style-pill ${currentLang === 'en' ? 'active' : ''}" data-lang="en">EN</button>
-          </div>
-        </div>
-
+  const arrowModeSectionHtml = IS_MOBILE_BUILD
+    ? ""
+    : `
         <!-- 1. Режим стрелок (1 / 3 / 5 стрелок) -->
         <div class="setting-item">
           <div class="setting-label-row">
@@ -2276,6 +2488,66 @@ function createWidget() {
             </button>
           </div>
         </div>
+      `;
+
+  const speedButtonsHtml = IS_MOBILE_BUILD
+    ? `
+          <button type="button" class="btn-speed-pill ${!amateurModeEnabled && speedMode === 'bullet' ? 'active' : ''}" data-speed="bullet">${t("bulletNamePhone")}</button>
+          <button type="button" class="btn-speed-pill ${!amateurModeEnabled && speedMode === 'blitz' ? 'active' : ''}" data-speed="blitz">${t("blitzNamePhone")}</button>
+          <button type="button" class="btn-speed-pill ${!amateurModeEnabled && speedMode === 'rapid' ? 'active' : ''}" data-speed="rapid">${t("rapidNamePhone")}</button>
+      `
+    : `
+          <button type="button" class="btn-speed-pill ${!amateurModeEnabled && speedMode === 'bullet' ? 'active' : ''}" data-speed="bullet">${t("bulletName")}</button>
+          <button type="button" class="btn-speed-pill ${!amateurModeEnabled && speedMode === 'blitz' ? 'active' : ''}" data-speed="blitz">${t("blitzName")}</button>
+          <button type="button" class="btn-speed-pill ${!amateurModeEnabled && speedMode === 'rapid' ? 'active' : ''}" data-speed="rapid">${t("rapidName")}</button>
+          <button type="button" class="btn-speed-pill ${!amateurModeEnabled && speedMode === 'ultra' ? 'active' : ''}" data-speed="ultra">${t("ultraName")}</button>
+      `;
+
+  const widget = document.createElement("div");
+  widget.id = "chess-assistant-widget";
+  widget.innerHTML = `
+    <div class="widget-drag-handle" title="Потяни, чтобы переместить"></div>
+    <div class="widget-header">
+      <h3>
+        <span>${IS_MOBILE_BUILD ? t("titlePhone") : t("title")}</span>
+        <span class="badge">${IS_MOBILE_BUILD ? "3650 ELO" : "4050 ELO"}</span>
+        <button id="btn-settings-widget" class="btn-settings" title="${t("settingsTitle")}">&#9881;</button>
+      </h3>
+      <div class="header-controls">
+        <button id="btn-minimize-widget" class="btn-minimize" title="Свернуть / Развернуть">${isMinimized ? "+" : "_"}</button>
+      </div>
+    </div>
+
+    <div class="widget-body">
+      <!-- Переключатель платформы (Chess.com / Lichess) -->
+      <div class="platform-switch-row">
+        <button type="button" class="btn-platform-pill ${currentPlatform === 'chesscom' ? 'active' : ''}" data-platform="chesscom" title="Chess.com">
+          Chess.com
+        </button>
+        <button type="button" class="btn-platform-pill ${currentPlatform === 'lichess' ? 'active' : ''}" data-platform="lichess" title="Lichess">
+          Lichess
+        </button>
+      </div>
+
+      <!-- Панель настроек -->
+      <div id="chess-settings-panel" class="widget-settings-panel" style="display: none;">
+        <div class="settings-panel-header">
+          <span>${t("settingsTitle")}</span>
+          <button id="btn-close-settings" class="btn-panel-close" title="Закрыть">&#x2715;</button>
+        </div>
+
+        <!-- 0. Выбор языка (Language: RU / EN) -->
+        <div class="setting-item" style="margin-bottom: 6px;">
+          <div class="setting-label-row">
+            <span>${t("langLabel")}</span>
+          </div>
+          <div class="style-buttons-row">
+            <button type="button" class="btn-style-pill ${currentLang === 'ru' ? 'active' : ''}" data-lang="ru">RU</button>
+            <button type="button" class="btn-style-pill ${currentLang === 'en' ? 'active' : ''}" data-lang="en">EN</button>
+          </div>
+        </div>
+
+        ${arrowModeSectionHtml}
 
         <!-- 2. Форма меток клеток (квадрат / круг / только стрелка) -->
         <div class="setting-item" style="margin-top: 6px;">
@@ -2321,7 +2593,6 @@ function createWidget() {
             <button type="button" class="btn-style-pill btn-delay-pill ${legitDelay === '5000' ? 'active' : ''}" data-delay="5000" title="Задержка 5 с">5 с</button>
           </div>
         </div>
-
       </div>
 
       <!-- Мини-полоска преимущества внутри виджета -->
@@ -2339,10 +2610,7 @@ function createWidget() {
       <!-- Переключатель режима скорости -->
       <div class="speed-modes-container">
         <div class="speed-modes-grid">
-          <button type="button" class="btn-speed-pill ${!amateurModeEnabled && speedMode === 'bullet' ? 'active' : ''}" data-speed="bullet">${t("bulletName")}</button>
-          <button type="button" class="btn-speed-pill ${!amateurModeEnabled && speedMode === 'blitz' ? 'active' : ''}" data-speed="blitz">${t("blitzName")}</button>
-          <button type="button" class="btn-speed-pill ${!amateurModeEnabled && speedMode === 'rapid' ? 'active' : ''}" data-speed="rapid">${t("rapidName")}</button>
-          <button type="button" class="btn-speed-pill ${!amateurModeEnabled && speedMode === 'ultra' ? 'active' : ''}" data-speed="ultra">${t("ultraName")}</button>
+          ${speedButtonsHtml}
         </div>
       </div>
 
@@ -2366,7 +2634,7 @@ function createWidget() {
           <button id="btn-refresh-hints" class="primary" title="Обновить расчёт [R / К]">
             ${t("refreshBtn")}
           </button>
-          <button id="btn-toggle-hints" class="btn-toggle-hints" title="Скрыть / показать стрелки [H / Р]">
+          <button id="btn-toggle-hints" class="btn-toggle-hints ${isAutoHintEnabled ? "" : "hints-off"}" title="Скрыть / показать стрелки [H / Р]">
             ${isAutoHintEnabled ? t("disableBtn") : t("enableBtn")}
           </button>
         </div>
@@ -2387,26 +2655,29 @@ function createWidget() {
         </div>
       </div>
 
-      <!-- Угловые зоны для удобного перетаскивания открытого меню на телефоне и ПК -->
+      <!-- Угловые зоны для удобного перетаскивания открытого меню -->
       <div class="widget-corner-grip bl" title="Потяни за угол"></div>
       <div class="widget-corner-grip br" title="Потяни за угол"></div>
     </div>
   `;
 
-  try {
-    const savedR = localStorage.getItem("chess_widget_pos_r");
-    const savedB = localStorage.getItem("chess_widget_pos_b");
-    if (savedR && savedB) {
-      widget.style.setProperty("right", savedR, "important");
-      widget.style.setProperty("bottom", savedB, "important");
-      widget.style.setProperty("left", "auto", "important");
-      widget.style.setProperty("top", "auto", "important");
-    }
-  } catch (err) {}
+  const savedR = safeGetStorage("chess_widget_pos_r");
+  const savedB = safeGetStorage("chess_widget_pos_b");
+  if (savedR && savedB) {
+    widget.style.setProperty("right", savedR, "important");
+    widget.style.setProperty("bottom", savedB, "important");
+    widget.style.setProperty("left", "auto", "important");
+    widget.style.setProperty("top", "auto", "important");
+  }
 
   document.body.appendChild(widget);
 
   const minBtn = document.getElementById("btn-minimize-widget");
+  if (isMinimized) {
+    widget.classList.add("minimized");
+    if (minBtn) minBtn.innerText = "+";
+  }
+
   minBtn.addEventListener("click", (e) => {
     e.stopPropagation();
     toggleWidgetMinimize();
@@ -2455,14 +2726,12 @@ function createWidget() {
     settingsPanel.style.display = "none";
   });
 
-  // Предотвращение всплытия событий клика по ссылкам ватермарки
   widget.querySelectorAll(".chess-watermark a").forEach((a) => {
     a.addEventListener("click", (e) => {
       e.stopPropagation();
     });
   });
 
-  // Переключатель языка (RU / EN)
   widget.querySelectorAll("[data-lang]").forEach((btn) => {
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -2471,7 +2740,6 @@ function createWidget() {
     });
   });
 
-  // Переключатель платформы (Chess.com / Lichess)
   widget.querySelectorAll("[data-platform]").forEach((btn) => {
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -2480,65 +2748,62 @@ function createWidget() {
     });
   });
 
-  // Переключение режима стрелок (1 / 3 / 5)
   widget.querySelectorAll("[data-arrow-mode]").forEach((btn) => {
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
       const mode = btn.getAttribute("data-arrow-mode");
       arrowMode = (mode === "multi5" || mode === "multi1") ? mode : "multi3";
-      localStorage.setItem("chess_arrow_mode", arrowMode);
+      safeSetStorage("chess_arrow_mode", arrowMode);
 
       widget.querySelectorAll("[data-arrow-mode]").forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
 
+      ++currentRequestId;
       clearOverlay();
       const targetPV = arrowMode === "multi5" ? 5 : (arrowMode === "multi1" ? 1 : 3);
-      extApi.runtime.sendMessage({ type: "SET_MULTIPV", multiPV: targetPV });
+      extApi.runtime.sendMessage({ type: "SET_MULTIPV", multiPV: targetPV }, () => {
+        if (extApi.runtime && extApi.runtime.lastError) { /* silent */ }
+      });
       lastAnalyzedFEN = "";
       requestBestMoves();
     });
   });
 
-  // Переключатель режимов Легит (Легит 1 / Легит 2)
   widget.querySelectorAll("[data-legit]").forEach((btn) => {
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
       const chosen = btn.getAttribute("data-legit");
       if (amateurMode === chosen) {
-        // Повторный клик выключает легит и возвращает обычный движок
         amateurMode = "off";
         amateurModeEnabled = false;
-        localStorage.setItem("chess_amateur_mode", "off");
+        safeSetStorage("chess_amateur_mode", "off");
         widget.querySelectorAll("[data-legit]").forEach((b) => b.classList.remove("active"));
-        // Возвращаем подсветку текущего режима скорости
         widget.querySelectorAll("[data-speed]").forEach((b) => {
           b.classList.toggle("active", b.getAttribute("data-speed") === speedMode);
         });
       } else {
-        // Включение выбранного легит-режима (Легит 1 или Легит 2)
         amateurMode = chosen;
         amateurModeEnabled = true;
-        localStorage.setItem("chess_amateur_mode", amateurMode);
+        safeSetStorage("chess_amateur_mode", amateurMode);
         widget.querySelectorAll("[data-legit]").forEach((b) => {
           b.classList.toggle("active", b.getAttribute("data-legit") === amateurMode);
         });
-        // Отключаем подсветку со скоростных кнопок
         widget.querySelectorAll("[data-speed]").forEach((b) => b.classList.remove("active"));
       }
 
+      ++currentRequestId;
       lastAnalyzedFEN = "";
       requestBestMoves();
     });
   });
 
-  // Выбор времени мышления / задержки Легита
   widget.querySelectorAll("[data-delay]").forEach((btn) => {
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
       const val = btn.getAttribute("data-delay");
       if (val) {
         legitDelay = val;
-        localStorage.setItem("chess_legit_delay", legitDelay);
+        safeSetStorage("chess_legit_delay", legitDelay);
         widget.querySelectorAll("[data-delay]").forEach((b) => {
           b.classList.toggle("active", b.getAttribute("data-delay") === legitDelay);
         });
@@ -2546,12 +2811,11 @@ function createWidget() {
     });
   });
 
-  // Выбор дизайна меток клеток (Квадрат / Круг / Только стрелка)
   widget.querySelectorAll("[data-marker]").forEach((btn) => {
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
       markerShape = btn.getAttribute("data-marker");
-      localStorage.setItem("chess_marker_shape", markerShape);
+      safeSetStorage("chess_marker_shape", markerShape);
 
       widget.querySelectorAll("[data-marker]").forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
@@ -2562,25 +2826,25 @@ function createWidget() {
     });
   });
 
-  // Переключение режимов скорости
   widget.querySelectorAll("[data-speed]").forEach((btn) => {
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
       const mode = btn.getAttribute("data-speed");
       if (SPEED_MODES[mode]) {
         speedMode = mode;
-        localStorage.setItem("chess_speed_mode", speedMode);
+        safeSetStorage("chess_speed_mode", speedMode);
 
         if (amateurModeEnabled) {
           amateurMode = "off";
           amateurModeEnabled = false;
-          localStorage.setItem("chess_amateur_mode", "off");
+          safeSetStorage("chess_amateur_mode", "off");
           widget.querySelectorAll("[data-legit]").forEach((b) => b.classList.remove("active"));
         }
 
         widget.querySelectorAll("[data-speed]").forEach((b) => b.classList.remove("active"));
         btn.classList.add("active");
 
+        ++currentRequestId;
         lastAnalyzedFEN = "";
         requestBestMoves();
       }
@@ -2611,6 +2875,7 @@ function createWidget() {
   function refreshHints() {
     const board = getBoardElement();
     const out = document.getElementById("chess-assistant-output");
+    ++currentRequestId;
     clearOverlay();
     lastRenderedState = null;
     lastAnalyzedFEN = "";
@@ -2630,6 +2895,7 @@ function createWidget() {
     isAutoHintEnabled = !isAutoHintEnabled;
     updateToggleHintsUI();
     const out = document.getElementById("chess-assistant-output");
+    ++currentRequestId;
     if (!isAutoHintEnabled) {
       clearTimeout(debounceTimer);
       clearOverlay();
@@ -2642,8 +2908,8 @@ function createWidget() {
     }
   }
 
-  window.refreshChessHints = refreshHints;
-  window.toggleChessHints = toggleHints;
+  refreshHintsFn = refreshHints;
+  toggleHintsFn = toggleHints;
 
   if (refreshHintsBtn) {
     refreshHintsBtn.addEventListener("click", refreshHints);
@@ -2657,6 +2923,7 @@ function createWidget() {
     autoToggle.addEventListener("change", (e) => {
       isAutoHintEnabled = e.target.checked;
       updateToggleHintsUI();
+      ++currentRequestId;
       if (!isAutoHintEnabled) {
         clearTimeout(debounceTimer);
         clearOverlay();
@@ -2674,6 +2941,7 @@ function createWidget() {
   if (myTurnToggle) {
     myTurnToggle.addEventListener("change", (e) => {
       isOnlyMyTurnEnabled = e.target.checked;
+      ++currentRequestId;
       lastAnalyzedFEN = "";
       requestBestMoves();
     });
@@ -2683,12 +2951,12 @@ function createWidget() {
   if (premovesToggle) {
     premovesToggle.addEventListener("change", (e) => {
       isPremovesEnabled = e.target.checked;
-      try {
-        localStorage.setItem("chess_premoves_enabled", isPremovesEnabled ? "true" : "false");
-      } catch (err) {}
+      safeSetStorage("chess_premoves_enabled", isPremovesEnabled ? "true" : "false");
+      ++currentRequestId;
       lastAnalyzedFEN = "";
       if (!isPremovesEnabled) {
         clearOverlay();
+        lastRenderedState = null;
         const out = document.getElementById("chess-assistant-output");
         if (out) out.innerText = t("readyMsg");
       }
@@ -2700,41 +2968,94 @@ function createWidget() {
 }
 
 // ==========================================
-// 8. Горячие клавиши (Keyboard Shortcuts)
-// H / Р - скрыть / показать подсказки
-// R / К - обновить расчёт позиции
+// 8. Инициализация событий окна и горячих клавиш
 // ==========================================
-if (!window.__chess_shortcuts_bound) {
-  window.__chess_shortcuts_bound = true;
-  window.addEventListener("keydown", (e) => {
-    const activeEl = document.activeElement;
-    const tag = activeEl ? activeEl.tagName : "";
-    if (tag === "INPUT" || tag === "TEXTAREA" || (activeEl && activeEl.isContentEditable)) {
-      return;
-    }
-    if (e.ctrlKey || e.altKey || e.metaKey) return;
-
-    const key = e.key ? e.key.toLowerCase() : "";
-    if (key === "h" || key === "р") {
-      e.preventDefault();
-      if (typeof window.toggleChessHints === "function") {
-        window.toggleChessHints();
-      }
-    } else if (key === "r" || key === "к") {
-      e.preventDefault();
-      if (typeof window.refreshChessHints === "function") {
-        window.refreshChessHints();
-      }
-    }
+if (typeof window !== "undefined" && typeof document !== "undefined") {
+  window.addEventListener("resize", handleResizeOrOrientation);
+  window.addEventListener("orientationchange", () => {
+    setTimeout(handleResizeOrOrientation, 100);
+    setTimeout(handleResizeOrOrientation, 300);
   });
+  if (window.screen && window.screen.orientation && window.screen.orientation.addEventListener) {
+    window.screen.orientation.addEventListener("change", () => {
+      setTimeout(handleResizeOrOrientation, 100);
+      setTimeout(handleResizeOrOrientation, 300);
+    });
+  }
+
+  window.addEventListener("mousemove", (e) => {
+    if (isWidgetDragging) onDragMove(e.clientX, e.clientY);
+  });
+  window.addEventListener("mouseup", () => {
+    if (isWidgetDragging) onDragEnd();
+  });
+  window.addEventListener("touchmove", (e) => {
+    if (isWidgetDragging && e.touches.length === 1) {
+      if (e.cancelable) e.preventDefault();
+      onDragMove(e.touches[0].clientX, e.touches[0].clientY);
+    }
+  }, { passive: false });
+  window.addEventListener("touchend", () => {
+    if (isWidgetDragging) onDragEnd();
+  }, { passive: true });
+  window.addEventListener("touchcancel", () => {
+    if (isWidgetDragging) onDragEnd();
+  }, { passive: true });
+
+  window.addEventListener("pointerdown", (e) => {
+    const board = getBoardElement();
+    if (board && (board.contains(e.target) || (e.target.closest && e.target.closest("wc-chess-board, chess-board, cg-board, .cg-wrap")))) {
+      isUserInteractingWithBoard = true;
+    }
+  }, { capture: true, passive: true });
+
+  window.addEventListener("pointerup", handleBoardInteractionEnd, { capture: true, passive: true });
+  window.addEventListener("pointercancel", handleBoardInteractionEnd, { capture: true, passive: true });
+  window.addEventListener("mouseup", handleBoardInteractionEnd, { capture: true, passive: true });
+  window.addEventListener("touchend", handleBoardInteractionEnd, { capture: true, passive: true });
+
+  if (typeof extApi !== "undefined" && extApi.runtime && extApi.runtime.onMessage) {
+    extApi.runtime.onMessage.addListener((request, sender, sendResponse) => {
+      if (request.type === "TOGGLE_WIDGET") {
+        toggleWidgetMinimize();
+        sendResponse({ ok: true, isMinimized });
+        return true;
+      }
+    });
+  }
+
+  if (!shortcutsBound) {
+    shortcutsBound = true;
+    window.addEventListener("keydown", (e) => {
+      const activeEl = document.activeElement;
+      const tag = activeEl ? activeEl.tagName : "";
+      if (tag === "INPUT" || tag === "TEXTAREA" || (activeEl && activeEl.isContentEditable)) {
+        return;
+      }
+      if (e.ctrlKey || e.altKey || e.metaKey) return;
+
+      const key = e.key ? e.key.toLowerCase() : "";
+      if (key === "h" || key === "р") {
+        e.preventDefault();
+        if (typeof toggleHintsFn === "function") {
+          toggleHintsFn();
+        }
+      } else if (key === "r" || key === "к") {
+        e.preventDefault();
+        if (typeof refreshHintsFn === "function") {
+          refreshHintsFn();
+        }
+      }
+    });
+  }
+
+  setInterval(() => {
+    createWidget();
+    setupBoardObserver();
+  }, 1500);
+
+  setTimeout(() => {
+    createWidget();
+    setupBoardObserver();
+  }, 800);
 }
-
-setInterval(() => {
-  createWidget();
-  setupBoardObserver();
-}, 1500);
-
-setTimeout(() => {
-  createWidget();
-  setupBoardObserver();
-}, 800);

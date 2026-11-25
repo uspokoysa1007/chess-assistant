@@ -17,6 +17,7 @@ yarn-error.log*
 
 # ⚙️ Временные папки сборок и кэш
 dist/
+chess-assistant_phone/
 *.tmp
 *.log
 .cache/
@@ -35,3 +36,6 @@ $RECYCLE.BIN/
 
 # 🤖 Внутренние служебные конфигурации агентов
 .gemini/
+GEMINI.md
+CLAUDE.md
+AGENTS.md

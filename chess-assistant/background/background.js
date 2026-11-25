@@ -2,29 +2,70 @@
 // Динамический MultiPV (1 / 3 / 5), расчёт премува (ponder) и мгновенная отмена устаревших задач
 
 const extApi = typeof browser !== "undefined" ? browser : chrome;
+const IS_MOBILE_BUILD = false;
 
 console.log("♟️ [Background] Запуск фонового скрипта (Dynamic MultiPV & Premove Engine)...");
 
 let stockfish = null;
 let isReady = false;
-let currentMultiPV = 3;
+let isUciOk = false;
+let currentMultiPV = IS_MOBILE_BUILD ? 1 : 3;
+let desiredMultiPV = currentMultiPV;
 
 // Массив кандидатов для MultiPV 1..5: { move, score, ponder }
 let candidates = [];
 
 let isSearching = false;
-let currentSearch = null; // { fen, options, resolve, timer, stopSent, cancelled }
+let currentSearch = null; // { fen, options, resolve, timer, emergencyTimer, stopSent, cancelled }
 let nextSearch = null;    // { fen, options, resolve }
+
+const EMPTY_SEARCH_RESULT = {
+  cancelled: false,
+  moves: [],
+  ponderMove: null,
+  bestMove: null,
+  bestScore: null
+};
+
+const CANCELLED_SEARCH_RESULT = {
+  cancelled: true,
+  moves: [],
+  ponderMove: null,
+  bestMove: null,
+  bestScore: null
+};
 
 function initStockfish() {
   if (stockfish) return;
 
   try {
-    const workerUrl = extApi.runtime.getURL("background/stockfish-19-full.js");
+    const workerUrl = extApi.runtime.getURL(
+      IS_MOBILE_BUILD ? "background/stockfish-19.js" : "background/stockfish-19-full.js"
+    );
     stockfish = new Worker(workerUrl);
+    isReady = false;
+    isUciOk = false;
 
     stockfish.onerror = function (err) {
       console.error("❌ [Stockfish Worker Error]:", err);
+      const crashedWorker = stockfish;
+      stockfish = null;
+      isReady = false;
+      isUciOk = false;
+
+      if (crashedWorker) {
+        try {
+          crashedWorker.terminate();
+        } catch (_) {}
+      }
+
+      if (currentSearch) {
+        finishCurrentSearch({ ...EMPTY_SEARCH_RESULT });
+      } else if (nextSearch) {
+        const pending = nextSearch;
+        nextSearch = null;
+        pending.resolve({ ...EMPTY_SEARCH_RESULT });
+      }
     };
 
     stockfish.onmessage = function (event) {
@@ -34,10 +75,34 @@ function initStockfish() {
         console.log("♟️ [Engine Identification]:", line);
       }
 
-      if (line === "uciok" || line === "readyok") {
+      if (line === "uciok") {
+        if (!isUciOk) {
+          isUciOk = true;
+          currentMultiPV = desiredMultiPV;
+          if (IS_MOBILE_BUILD) {
+            // Оптимизация параметров WASM-движка под мобильные процессоры
+            stockfish.postMessage("setoption name Threads value 1");
+            stockfish.postMessage("setoption name Hash value 16");
+            stockfish.postMessage("setoption name Ponder value false");
+            stockfish.postMessage("setoption name Move Overhead value 10");
+          }
+          stockfish.postMessage(`setoption name MultiPV value ${currentMultiPV}`);
+          stockfish.postMessage("isready");
+        }
+      }
+
+      if (line === "readyok") {
         isReady = true;
-        stockfish.postMessage(`setoption name MultiPV value ${currentMultiPV}`);
-        console.log(`✅ [Stockfish 19 FULL NNUE] Готов! MultiPV = ${currentMultiPV}`);
+        if (IS_MOBILE_BUILD) {
+          console.log(`✅ [Stockfish 19 Lite WASM Mobile] Оптимизирован под мобильный процессор и готов! MultiPV = ${currentMultiPV}`);
+        } else {
+          console.log(`✅ [Stockfish 19 FULL NNUE] Готов! MultiPV = ${currentMultiPV}`);
+        }
+        if (nextSearch) {
+          const next = nextSearch;
+          nextSearch = null;
+          startSearch(next.fen, next.options, next.resolve);
+        }
       }
 
       // Универсальный парсинг линий MultiPV (1..5) + второго хода (ponder / премув)
@@ -90,9 +155,11 @@ function initStockfish() {
     };
 
     stockfish.postMessage("uci");
-    stockfish.postMessage("isready");
   } catch (err) {
     console.error("❌ Ошибка при создании Worker Stockfish:", err);
+    stockfish = null;
+    isReady = false;
+    isUciOk = false;
   }
 }
 
@@ -104,12 +171,20 @@ function buildMovesResult(fallbackBest) {
     const item = candidates[i];
     if (item && item.move && item.move !== "(none)" && !seen.has(item.move)) {
       seen.add(item.move);
-      result.push({ move: item.move, score: item.score || null });
+      result.push({
+        move: item.move,
+        score: item.score || null,
+        ponder: item.ponder || null
+      });
     }
   }
 
   if (result.length === 0 && fallbackBest && fallbackBest !== "(none)") {
-    result.push({ move: fallbackBest, score: candidates[0]?.score || null });
+    result.push({
+      move: fallbackBest,
+      score: candidates[0]?.score || null,
+      ponder: candidates[0]?.ponder || null
+    });
   }
 
   return result;
@@ -118,29 +193,53 @@ function buildMovesResult(fallbackBest) {
 initStockfish();
 
 function startSearch(fen, options, resolve) {
+  if (!stockfish || !isReady) {
+    if (nextSearch) {
+      nextSearch.resolve({ ...CANCELLED_SEARCH_RESULT });
+    }
+    nextSearch = { fen, options, resolve };
+    initStockfish();
+    return;
+  }
+
   isSearching = true;
   candidates = [];
 
   const movetime = options.movetime || null;
   const depth = options.depth || null;
-  const requestedPV = Math.max(1, Math.min(5, options.multiPV || 3));
+  const requestedPV = Math.max(1, Math.min(5, options.multiPV || desiredMultiPV));
+  desiredMultiPV = requestedPV;
 
   if (requestedPV !== currentMultiPV) {
     currentMultiPV = requestedPV;
     stockfish.postMessage(`setoption name MultiPV value ${currentMultiPV}`);
   }
 
-  const waitLimit = movetime ? Math.max(3000, movetime + 3500) : (depth ? Math.max(12000, depth * 800) : 15000);
+  const waitLimit = movetime
+    ? Math.max(4500, movetime + 4000)
+    : (depth ? Math.max(12000, depth * 800) : 15000);
 
-  const timer = setTimeout(() => {
-    if (currentSearch && currentSearch.resolve === resolve && !currentSearch.stopSent) {
+  const searchState = {
+    fen,
+    options,
+    resolve,
+    timer: null,
+    emergencyTimer: null,
+    stopSent: false,
+    cancelled: false
+  };
+
+  searchState.timer = setTimeout(() => {
+    if (currentSearch === searchState && !searchState.stopSent) {
       console.warn("⚠️ [Stockfish] Лимит ожидания, отправляем stop:", fen);
-      currentSearch.stopSent = true;
-      stockfish.postMessage("stop");
+      searchState.stopSent = true;
+      if (stockfish) {
+        stockfish.postMessage("stop");
+      }
 
       // Аварийный сброс, если воркер не ответил на stop за 800мс
-      setTimeout(() => {
-        if (currentSearch && currentSearch.resolve === resolve) {
+      searchState.emergencyTimer = setTimeout(() => {
+        if (currentSearch === searchState) {
           const moves = buildMovesResult(null);
           const ponderMove = candidates[0]?.ponder || null;
           finishCurrentSearch({
@@ -155,7 +254,7 @@ function startSearch(fen, options, resolve) {
     }
   }, waitLimit);
 
-  currentSearch = { fen, options, resolve, timer, stopSent: false, cancelled: false };
+  currentSearch = searchState;
 
   stockfish.postMessage(`position fen ${fen}`);
   if (movetime && depth) {
@@ -170,19 +269,22 @@ function startSearch(fen, options, resolve) {
 function finishCurrentSearch(result) {
   if (currentSearch) {
     clearTimeout(currentSearch.timer);
+    if (currentSearch.emergencyTimer) {
+      clearTimeout(currentSearch.emergencyTimer);
+    }
     const cb = currentSearch.resolve;
     const wasCancelled = currentSearch.cancelled;
     currentSearch = null;
     isSearching = false;
     if (cb) {
-      cb(wasCancelled ? { cancelled: true, moves: [], ponderMove: null, bestMove: null, bestScore: null } : result);
+      cb(wasCancelled ? { ...CANCELLED_SEARCH_RESULT } : result);
     }
   } else {
     isSearching = false;
   }
 
-  // Запускаем самую свежую позицию из очереди, если она ждёт
-  if (nextSearch) {
+  // Запускаем самую свежую позицию из очереди, если она ждёт и движок готов
+  if (nextSearch && stockfish && isReady) {
     const next = nextSearch;
     nextSearch = null;
     startSearch(next.fen, next.options, next.resolve);
@@ -192,6 +294,19 @@ function finishCurrentSearch(result) {
 function calculateMove(fen, options = {}) {
   return new Promise((resolve) => {
     initStockfish();
+
+    if (!stockfish) {
+      resolve({ ...EMPTY_SEARCH_RESULT });
+      return;
+    }
+
+    if (!isReady) {
+      if (nextSearch) {
+        nextSearch.resolve({ ...CANCELLED_SEARCH_RESULT });
+      }
+      nextSearch = { fen, options, resolve };
+      return;
+    }
 
     if (!isSearching) {
       startSearch(fen, options, resolve);
@@ -208,7 +323,7 @@ function calculateMove(fen, options = {}) {
     }
 
     if (nextSearch) {
-      nextSearch.resolve({ cancelled: true, moves: [], ponderMove: null, bestMove: null, bestScore: null });
+      nextSearch.resolve({ ...CANCELLED_SEARCH_RESULT });
     }
     nextSearch = { fen, options, resolve };
   });
@@ -228,9 +343,10 @@ extApi.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.type === "SET_MULTIPV") {
-    const pv = Math.max(1, Math.min(5, request.multiPV || 3));
+    const pv = Math.max(1, Math.min(5, request.multiPV || (IS_MOBILE_BUILD ? 1 : 3)));
+    desiredMultiPV = pv;
     initStockfish();
-    if (!isSearching && pv !== currentMultiPV) {
+    if (stockfish && isReady && !isSearching && pv !== currentMultiPV) {
       currentMultiPV = pv;
       stockfish.postMessage(`setoption name MultiPV value ${currentMultiPV}`);
     }
@@ -252,4 +368,3 @@ if (actionApi && actionApi.onClicked) {
     }
   });
 }
-

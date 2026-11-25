@@ -137,20 +137,16 @@
 
   <!-- Assistant Brackets -->
   <g id="brackets">
-    <path d="M 306 628 L 306 612 A 6 6 0 0 1 312 606 L 328 606 M 372 606 L 388 606 A 6 6 0 0 1 394 612 L 394 628 M 394 672 L 394 688 A 6 6 0 0 1 388 694 L 372 694 M 328 694 L 312 694 A 6 6 0 0 1 306 688 L 306 672 " fill="none" stroke="#18181b" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round" filter="url(#shadow)"/>
-    <path d="M 306 428 L 306 412 A 6 6 0 0 1 312 406 L 328 406 M 372 406 L 388 406 A 6 6 0 0 1 394 412 L 394 428 M 394 472 L 394 488 A 6 6 0 0 1 388 494 L 372 494 M 328 494 L 312 494 A 6 6 0 0 1 306 488 L 306 472 " fill="none" stroke="#18181b" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round" filter="url(#shadow)"/>
     <path d="M 6 628 L 6 612 A 6 6 0 0 1 12 606 L 28 606 M 72 606 L 88 606 A 6 6 0 0 1 94 612 L 94 628 M 94 672 L 94 688 A 6 6 0 0 1 88 694 L 72 694 M 28 694 L 12 694 A 6 6 0 0 1 6 688 L 6 672 " fill="none" stroke="#ffffff" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round" filter="url(#shadow)"/>
     <path d="M 6 428 L 6 412 A 6 6 0 0 1 12 406 L 28 406 M 72 406 L 88 406 A 6 6 0 0 1 94 412 L 94 428 M 94 472 L 94 488 A 6 6 0 0 1 88 494 L 72 494 M 28 494 L 12 494 A 6 6 0 0 1 6 488 L 6 472 " fill="none" stroke="#ffffff" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round" filter="url(#shadow)"/>
     <path d="M 506 728 L 506 712 A 6 6 0 0 1 512 706 L 528 706 M 572 706 L 588 706 A 6 6 0 0 1 594 712 L 594 728 M 594 772 L 594 788 A 6 6 0 0 1 588 794 L 572 794 M 528 794 L 512 794 A 6 6 0 0 1 506 788 L 506 772 " fill="none" stroke="#94a3b8" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round" filter="url(#shadow)"/>
     <path d="M 406 728 L 406 712 A 6 6 0 0 1 412 706 L 428 706 M 472 706 L 488 706 A 6 6 0 0 1 494 712 L 494 728 M 494 772 L 494 788 A 6 6 0 0 1 488 794 L 472 794 M 428 794 L 412 794 A 6 6 0 0 1 406 788 L 406 772 " fill="none" stroke="#94a3b8" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round" filter="url(#shadow)"/>
+    <path d="M 306 628 L 306 612 A 6 6 0 0 1 312 606 L 328 606 M 372 606 L 388 606 A 6 6 0 0 1 394 612 L 394 628 M 394 672 L 394 688 A 6 6 0 0 1 388 694 L 372 694 M 328 694 L 312 694 A 6 6 0 0 1 306 688 L 306 672 " fill="none" stroke="#18181b" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round" filter="url(#shadow)"/>
+    <path d="M 306 428 L 306 412 A 6 6 0 0 1 312 406 L 328 406 M 372 406 L 388 406 A 6 6 0 0 1 394 412 L 394 428 M 394 472 L 394 488 A 6 6 0 0 1 388 494 L 372 494 M 328 494 L 312 494 A 6 6 0 0 1 306 488 L 306 472 " fill="none" stroke="#18181b" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round" filter="url(#shadow)"/>
   </g>
 
   <!-- Assistant Arrows -->
   <g id="arrows">
-<g filter="url(#shadow)">
-  <line x1="350" y1="640" x2="350" y2="434" stroke="#18181b" stroke-width="6.2" stroke-linecap="round" />
-  <polygon points="350,420 360,437.3205080756888 340,437.3205080756888" fill="#18181b" stroke="rgba(255,255,255,0.4)" stroke-width="1.5" stroke-linejoin="round" />
-</g>
 <g filter="url(#shadow)">
   <line x1="50" y1="640" x2="50" y2="434" stroke="#ffffff" stroke-width="6.2" stroke-linecap="round" />
   <polygon points="50,420 60,437.3205080756888 40,437.3205080756888" fill="#ffffff" stroke="#18181b" stroke-width="1.5" stroke-linejoin="round" />
@@ -159,21 +155,25 @@
   <line x1="540" y1="750" x2="434" y2="750" stroke="#94a3b8" stroke-width="6.2" stroke-linecap="round" />
   <polygon points="420,750 437.3205080756888,740 437.3205080756888,760" fill="#94a3b8" stroke="#18181b" stroke-width="1.5" stroke-linejoin="round" />
 </g>
+<g filter="url(#shadow)">
+  <line x1="350" y1="640" x2="350" y2="434" stroke="#18181b" stroke-width="6.2" stroke-linecap="round" />
+  <polygon points="350,420 360,437.3205080756888 340,437.3205080756888" fill="#18181b" stroke="rgba(255,255,255,0.4)" stroke-width="1.5" stroke-linejoin="round" />
+</g>
   </g>
 
   <!-- Assistant Eval Badges -->
   <g id="badges">
     <g filter="url(#shadow)">
-  <rect x="326" y="402" width="48" height="22" rx="5" fill="#18181b" stroke="#3f3f46" stroke-width="1.2" />
-  <text x="350" y="417.5" fill="#ffffff" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif" font-weight="700" font-size="12" text-anchor="middle">+0.3</text>
-</g>
-    <g filter="url(#shadow)">
-  <rect x="26" y="402" width="48" height="22" rx="5" fill="#18181b" stroke="#3f3f46" stroke-width="1.2" />
+  <rect x="26" y="402" width="48" height="22" rx="5" fill="#18181b" stroke="#e4e4e7" stroke-width="1.2" />
   <text x="50" y="417.5" fill="#ffffff" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif" font-weight="700" font-size="12" text-anchor="middle">+0.2</text>
 </g>
     <g filter="url(#shadow)">
-  <rect x="426" y="702" width="48" height="22" rx="5" fill="#18181b" stroke="#3f3f46" stroke-width="1.2" />
+  <rect x="426" y="702" width="48" height="22" rx="5" fill="#18181b" stroke="#94a3b8" stroke-width="1.2" />
   <text x="450" y="717.5" fill="#ffffff" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif" font-weight="700" font-size="12" text-anchor="middle">+0.3</text>
+</g>
+    <g filter="url(#shadow)">
+  <rect x="326" y="402" width="48" height="22" rx="5" fill="#18181b" stroke="#3f3f46" stroke-width="1.2" />
+  <text x="350" y="417.5" fill="#ffffff" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif" font-weight="700" font-size="12" text-anchor="middle">+0.4</text>
 </g>
   </g>
 

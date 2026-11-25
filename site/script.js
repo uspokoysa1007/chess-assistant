@@ -5,10 +5,11 @@
 
 const translations = {
   ru: {
+    pageTitle: "Chess Assistant — Умный шахматный ассистент (Stockfish 19)",
     navFeatures: "Возможности",
     navBrowsers: "Браузеры",
     navInstall: "Установка",
-    heroBadge: "Stockfish 19 WASM • Версия 1.0 Релиз",
+    heroBadge: "Stockfish 19 WASM • Версия 2.4 Релиз",
     heroTitle1: "Побеждай уверенно.",
     heroTitle2: "Умный шахматный ассистент",
     heroSubtitle: "Визуальные стрелки лучших ходов, расчёт глубоких премувов и точная шкала преимущества в реальном времени на Chess.com и Lichess.org.",
@@ -17,6 +18,12 @@ const translations = {
     downloadPhoneBtn: "Скачать для Телефона",
     tgChannelBtn: "Telegram Канал",
     githubBtn: "Исходный код",
+    mockEvalLabel: "📊 Оценка:",
+    mockStatus: "🎯 Преимущество белых (в твою пользу! 🎉)",
+    mockBullet: "⚡ Пуля (150мс)",
+    mockBlitz: "🎯 Блиц",
+    mockRapid: "🧠 Рапид",
+    mockLog: "⬛ 1-й: D2 ➔ D4 [+0.4 • в твою пользу]<br>◽ 2-й: F1 ➔ E1 [+0.3 • в твою пользу]<br>⬜ 3-й: A2 ➔ A4 [+0.2 • в твою пользу]",
     browsersTitle: "Под какие браузеры подходит?",
     browsersSubtitle: "Плагин разработан в формате открытого стандарта расширений <strong>.xpi</strong>, что гарантирует максимальную производительность движка WebAssembly и отсутствие ограничений.",
     recommendedBadge: "⭐ Идеальный выбор",
@@ -40,8 +47,11 @@ const translations = {
     feat6Desc: "Мгновенный выбор языка интерфейса в настройках виджета. Автоматическое определение языка браузера.",
     installTitle: "Как установить плагин",
     installSubtitle: "Простая установка в три шага без сторонних магазинов расширений.",
+    tabPcBtn: "💻 Компьютер (Windows / Mac / Linux)",
+    tabPhoneBtn: "📱 Смартфон (Android)",
     stepPc1Title: "Скачай файл расширения",
     stepPc1Desc: "Скачай файл <code>chess-assistant.xpi</code> по кнопке ниже:",
+    stepPcDownloadBtn: "📥 Скачать chess-assistant.xpi (75 МБ)",
     stepPc2Title: "Открой управление дополнениями",
     stepPc2Desc: "В браузере Waterfox или Firefox открой страницу дополнений (нажми комбинацию клавиш <code>Ctrl + Shift + A</code> или введи в адресную строку <code>about:addons</code>).",
     stepPc3Title: "Установи из файла",
@@ -50,19 +60,22 @@ const translations = {
     stepPh1Desc: "Установи браузер <strong>Waterfox</strong> или <strong>Firefox Nightly</strong> из Google Play или официального сайта.",
     stepPh2Title: "Скачай мобильную версию плагина",
     stepPh2Desc: "Скачай ультра-лёгкий пакет <code>chess-assistant_phone.xpi</code> (всего 1.2 МБ):",
+    stepPhDownloadBtn: "📥 Скачать chess-assistant_phone.xpi (1.2 МБ)",
     stepPh3Title: "Установи дополнение в браузере",
     stepPh3Desc: "В мобильном Waterfox нажми меню (три точки ☰) ➔ <strong>Дополнения</strong> ➔ значок шестерёнки ⚙️ ➔ <strong>«Установить дополнение из файла»</strong>. Выбери скачанный файл — и побеждай с телефона!",
     tgBannerTitle: "Официальный Telegram-канал",
     tgBannerDesc: "Свежие обновления движка, новые функции, настройки под блиц/пулю и общение игроков в нашем Telegram-сообществе!",
+    tgJoinBtn: "Присоединиться к Telegram",
     footerDesc: "Свободное и открытое расширение для анализа шахматных партий.",
     footerColProject: "Проект",
     footerColCommunity: "Сообщество"
   },
   en: {
+    pageTitle: "Chess Assistant — Smart Chess Assistant (Stockfish 19)",
     navFeatures: "Features",
     navBrowsers: "Browsers",
     navInstall: "Installation",
-    heroBadge: "Stockfish 19 WASM • Version 1.0 Release",
+    heroBadge: "Stockfish 19 WASM • Version 2.4 Release",
     heroTitle1: "Dominate Every Match.",
     heroTitle2: "Smart Chess Assistant",
     heroSubtitle: "Live best-move arrows, smart opponent pre-calculation, and real-time win probability evaluation on Chess.com and Lichess.org.",
@@ -71,6 +84,12 @@ const translations = {
     downloadPhoneBtn: "Download for Mobile",
     tgChannelBtn: "Telegram Channel",
     githubBtn: "Source Code",
+    mockEvalLabel: "📊 Eval:",
+    mockStatus: "🎯 White is winning (in your favor! 🎉)",
+    mockBullet: "⚡ Bullet (150ms)",
+    mockBlitz: "🎯 Blitz",
+    mockRapid: "🧠 Rapid",
+    mockLog: "⬛ 1st: D2 ➔ D4 [+0.4 • in your favor]<br>◽ 2nd: F1 ➔ E1 [+0.3 • in your favor]<br>⬜ 3rd: A2 ➔ A4 [+0.2 • in your favor]",
     browsersTitle: "Supported Browsers",
     browsersSubtitle: "Built with the open standard <strong>.xpi</strong> extension format, unlocking maximum WebAssembly performance with zero restrictions.",
     recommendedBadge: "⭐ Recommended Choice",
@@ -94,8 +113,11 @@ const translations = {
     feat6Desc: "Switch between Russian and English with a single tap in extension settings. Automatic browser language detection.",
     installTitle: "How to Install the Extension",
     installSubtitle: "Simple 3-step installation without third-party store approvals.",
+    tabPcBtn: "💻 Desktop (Windows / Mac / Linux)",
+    tabPhoneBtn: "📱 Smartphone (Android)",
     stepPc1Title: "Download the Extension File",
     stepPc1Desc: "Download <code>chess-assistant.xpi</code> using the button below:",
+    stepPcDownloadBtn: "📥 Download chess-assistant.xpi (75 MB)",
     stepPc2Title: "Open Add-ons Manager",
     stepPc2Desc: "In Waterfox or Firefox, open the Add-ons manager (press <code>Ctrl + Shift + A</code> or type <code>about:addons</code> into the address bar).",
     stepPc3Title: "Install from File",
@@ -104,10 +126,12 @@ const translations = {
     stepPh1Desc: "Install <strong>Waterfox</strong> or <strong>Firefox Nightly</strong> from Google Play or the official website.",
     stepPh2Title: "Download the Mobile Extension",
     stepPh2Desc: "Download the lightweight <code>chess-assistant_phone.xpi</code> build (only 1.2 MB):",
+    stepPhDownloadBtn: "📥 Download chess-assistant_phone.xpi (1.2 MB)",
     stepPh3Title: "Install Add-on in Browser",
     stepPh3Desc: "In mobile Waterfox tap menu (three dots ☰) ➔ <strong>Add-ons</strong> ➔ gear icon ⚙️ ➔ <strong>'Install Add-on From File'</strong>. Choose the downloaded file and dominate from your phone!",
     tgBannerTitle: "Official Telegram Community",
     tgBannerDesc: "Fresh engine updates, release alerts, speed tuning configs, and community support in our Telegram channel!",
+    tgJoinBtn: "Join Telegram Channel",
     footerDesc: "Free and open-source chess tactical analysis extension.",
     footerColProject: "Project",
     footerColCommunity: "Community"
@@ -119,10 +143,10 @@ document.addEventListener("DOMContentLoaded", () => {
   const tabButtons = document.querySelectorAll(".tab-btn");
   const tabContents = document.querySelectorAll(".tab-content");
 
-  tabButtons.forEach(btn => {
+  tabButtons.forEach((btn) => {
     btn.addEventListener("click", () => {
-      tabButtons.forEach(b => b.classList.remove("active"));
-      tabContents.forEach(c => c.classList.remove("active"));
+      tabButtons.forEach((b) => b.classList.remove("active"));
+      tabContents.forEach((c) => c.classList.remove("active"));
 
       btn.classList.add("active");
       const targetId = btn.getAttribute("data-tab");
@@ -140,26 +164,32 @@ document.addEventListener("DOMContentLoaded", () => {
   function setLanguage(lang) {
     const dict = translations[lang] || translations.ru;
 
-    document.querySelectorAll("[data-i18n]").forEach(elem => {
+    document.querySelectorAll("[data-i18n]").forEach((elem) => {
       const key = elem.getAttribute("data-i18n");
       if (dict[key]) {
-        elem.innerHTML = dict[key];
+        if (elem.tagName === "TITLE") {
+          document.title = dict[key];
+        } else {
+          elem.innerHTML = dict[key];
+        }
       }
     });
 
-    if (lang === "en") {
-      btnEn.classList.add("active");
-      btnRu.classList.remove("active");
-      document.documentElement.lang = "en";
-    } else {
-      btnRu.classList.add("active");
-      btnEn.classList.remove("active");
-      document.documentElement.lang = "ru";
+    if (btnRu && btnEn) {
+      if (lang === "en") {
+        btnEn.classList.add("active");
+        btnRu.classList.remove("active");
+        document.documentElement.lang = "en";
+      } else {
+        btnRu.classList.add("active");
+        btnEn.classList.remove("active");
+        document.documentElement.lang = "ru";
+      }
     }
 
     try {
       localStorage.setItem("chess_site_lang", lang);
-    } catch (e) {}
+    } catch (_) {}
   }
 
   if (btnRu && btnEn) {
@@ -167,9 +197,14 @@ document.addEventListener("DOMContentLoaded", () => {
     btnEn.addEventListener("click", () => setLanguage("en"));
   }
 
-  // Определяем сохраненный язык или язык системы
-  const savedLang = localStorage.getItem("chess_site_lang");
-  if (savedLang === "en" || (!savedLang && !navigator.language.startsWith("ru"))) {
+  // Определяем сохраненный язык или язык системы (безопасно в приватных браузерах)
+  let savedLang = null;
+  try {
+    savedLang = localStorage.getItem("chess_site_lang");
+  } catch (_) {}
+
+  const browserLang = (typeof navigator !== "undefined" && navigator.language) ? navigator.language : "ru";
+  if (savedLang === "en" || (!savedLang && !browserLang.startsWith("ru"))) {
     setLanguage("en");
   } else {
     setLanguage("ru");
