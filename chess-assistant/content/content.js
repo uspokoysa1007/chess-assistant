@@ -39,10 +39,6 @@ let lastRenderedState = null;
 let lastEvalState = { score: null, activeTurn: "w" };
 let currentRequestId = 0;
 
-let refreshHintsFn = null;
-let toggleHintsFn = null;
-let shortcutsBound = false;
-
 // Язык интерфейса (RU / EN)
 const browserLang = (typeof navigator !== "undefined" && navigator.language) ? navigator.language : "en";
 let currentLang = safeGetStorage("chess_lang") || (browserLang.startsWith("ru") ? "ru" : "en");
@@ -75,7 +71,7 @@ const TRANSLATIONS = {
     bulletNamePhone: "Пуля (50мс)",
     blitzNamePhone: "Блиц (100мс)",
     rapidNamePhone: "Рапид (150мс)",
-    premovesLabel: "Умные премувы",
+    premovesLabel: "Премувы",
     autoHintsLabel: "Стрелки после каждого хода",
     myTurnOnlyLabel: "Только мой ход",
     refreshBtn: "Обновить",
@@ -107,7 +103,22 @@ const TRANSLATIONS = {
     legit2Title: "Легит 2 (~1350 ELO)",
     legit2Desc: "~75% точность",
     legitDelayLabel: "Мышление легита:",
-    amateurModeOn: "Легит включён"
+    amateurModeOn: "Легит включён",
+    bulletShort: "Пуля",
+    blitzShort: "Блиц",
+    rapidShort: "Рапид",
+    ultraShort: "Ультра (7с)",
+    dragHandleTip: "Потяни, чтобы переместить",
+    minimizeTip: "Свернуть / Развернуть",
+    closeTip: "Закрыть",
+    legit1Tip: "Точность ~85% • Клубный уровень",
+    legit2Tip: "Точность ~75% • Безопасный любитель",
+    delayPrefix: "Задержка",
+    unitMs: "мс",
+    unitSec: "с",
+    refreshTip: "Обновить расчёт",
+    toggleTip: "Скрыть / показать стрелки",
+    cornerGripTip: "Потяни за угол"
   },
   en: {
     title: "Stockfish 19",
@@ -136,7 +147,7 @@ const TRANSLATIONS = {
     bulletNamePhone: "Bullet (50ms)",
     blitzNamePhone: "Blitz (100ms)",
     rapidNamePhone: "Rapid (150ms)",
-    premovesLabel: "Smart premoves",
+    premovesLabel: "Premoves",
     autoHintsLabel: "Arrows after each move",
     myTurnOnlyLabel: "My turn only",
     refreshBtn: "Refresh",
@@ -168,7 +179,22 @@ const TRANSLATIONS = {
     legit2Title: "Legit 2 (~1350 ELO)",
     legit2Desc: "~75% accuracy",
     legitDelayLabel: "Legit thinking time:",
-    amateurModeOn: "Legit enabled"
+    amateurModeOn: "Legit enabled",
+    bulletShort: "Bullet",
+    blitzShort: "Blitz",
+    rapidShort: "Rapid",
+    ultraShort: "Ultra (7s)",
+    dragHandleTip: "Drag to move",
+    minimizeTip: "Minimize / Expand",
+    closeTip: "Close",
+    legit1Tip: "~85% accuracy • Club level",
+    legit2Tip: "~75% accuracy • Casual player",
+    delayPrefix: "Delay",
+    unitMs: "ms",
+    unitSec: "s",
+    refreshTip: "Recalculate position",
+    toggleTip: "Hide / show arrows",
+    cornerGripTip: "Drag corner to move"
   }
 };
 
@@ -179,15 +205,15 @@ function t(key) {
 
 const SPEED_MODES = IS_MOBILE_BUILD
   ? {
-      bullet: { name: "Пуля", movetime: 50, depth: 8, debounce: 80, label: "Пуля (50мс • 8d)" },
-      blitz:  { name: "Блиц", movetime: 100, depth: 9, debounce: 100, label: "Блиц (100мс • 9d)" },
-      rapid:  { name: "Рапид", movetime: 150, depth: 11, debounce: 120, label: "Рапид (150мс • 11d)" }
+      bullet: { nameKey: "bulletShort", name: "Пуля", movetime: 50, depth: 8, debounce: 80, label: "Пуля (50мс • 8d)" },
+      blitz:  { nameKey: "blitzShort", name: "Блиц", movetime: 100, depth: 9, debounce: 100, label: "Блиц (100мс • 9d)" },
+      rapid:  { nameKey: "rapidShort", name: "Рапид", movetime: 150, depth: 11, debounce: 120, label: "Рапид (150мс • 11d)" }
     }
   : {
-      bullet: { name: "Пуля", movetime: 150, depth: null, debounce: 50, label: "Пуля (150мс)" },
-      blitz:  { name: "Блиц", movetime: 500, depth: 11, debounce: 150, label: "Блиц (~0.5с)" },
-      rapid:  { name: "Рапид", movetime: null, depth: 14, debounce: 300, label: "Рапид" },
-      ultra:  { name: "Ультра (7с)", movetime: 7000, depth: 26, debounce: 300, label: "Ультра (7с • 26х)" }
+      bullet: { nameKey: "bulletShort", name: "Пуля", movetime: 150, depth: null, debounce: 50, label: "Пуля (150мс)" },
+      blitz:  { nameKey: "blitzShort", name: "Блиц", movetime: 500, depth: 11, debounce: 150, label: "Блиц (~0.5с)" },
+      rapid:  { nameKey: "rapidShort", name: "Рапид", movetime: null, depth: 14, debounce: 300, label: "Рапид" },
+      ultra:  { nameKey: "ultraShort", name: "Ультра (7с)", movetime: 7000, depth: 26, debounce: 300, label: "Ультра (7с • 26х)" }
     };
 
 // Настройки режимов (сохраняются безопасно через safeGetStorage)
@@ -226,6 +252,7 @@ let legitDelay = VALID_LEGIT_DELAYS.includes(rawDelayStorage) ? rawDelayStorage 
 
 const AMATEUR_CONFIGS = {
   legit1: {
+    nameKey: "legit1Title",
     name: "Легит 1 (~1750 ELO)",
     bestMoveProb: 0.72,
     maxBlunderCp: 120,
@@ -233,6 +260,7 @@ const AMATEUR_CONFIGS = {
     depth: 11
   },
   legit2: {
+    nameKey: "legit2Title",
     name: "Легит 2 (~1350 ELO)",
     bestMoveProb: 0.50,
     maxBlunderCp: 220,
@@ -266,15 +294,16 @@ function amateurPickMove(moves) {
   if (roll < config.bestMoveProb) return best;
 
   // Собираем безопасные субоптимальные ходы (только с известной оценкой)
-  const bestCp = best.score?.type === "cp" ? best.score.value : 0;
+  if (!best.score || best.score.type !== "cp") return best;
+  const bestCp = best.score.value;
   const candidates = moves.slice(1).filter((m) => {
     if (!m.score) return false;
     if (m.score.type === "mate") {
       return m.score.value > 0;
     }
     if (m.score.type === "cp") {
-      const diff = Math.abs(bestCp - m.score.value);
-      return diff <= config.maxBlunderCp;
+      const loss = bestCp - m.score.value;
+      return loss <= config.maxBlunderCp;
     }
     return false;
   });
@@ -310,6 +339,8 @@ const PREMOVE_COLOR = IS_MOBILE_BUILD ? "#7c3aed" : "#22c55e";
 // ==========================================
 // 1. АДАПТЕРЫ ПЛАТФОРМ (Chess.com & Lichess)
 // ==========================================
+
+const STANDARD_START_FEN_RANKS = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR";
 
 let gameTracking = {
   whiteKingMoved: false,
@@ -446,12 +477,16 @@ const Adapters = {
 
       return "w";
     },
-    getCastlingAndEnPassant(board, grid) {
+    getCastlingAndEnPassant(board, grid, activeTurn = "w", fenRanks = "") {
       const moveNodes = findFirstNonEmptySelector(CHESSCOM_MOVE_SELECTORS);
-      if (moveNodes.length === 0 || moveNodes.length < lastPlyCount) {
+      const selectedIdx = moveNodes.findIndex((n) => n.classList.contains("selected") || !!n.querySelector(".selected"));
+      const isViewingPast = selectedIdx !== -1 && selectedIdx + 1 < moveNodes.length;
+      const activePlyCount = selectedIdx !== -1 ? selectedIdx + 1 : moveNodes.length;
+
+      if (fenRanks === STANDARD_START_FEN_RANKS || activePlyCount < lastPlyCount || isViewingPast) {
         resetGameTracking();
       }
-      lastPlyCount = moveNodes.length;
+      lastPlyCount = activePlyCount;
 
       if (!this.isDragging(board)) {
         if (grid[0][4] !== "wk") gameTracking.whiteKingMoved = true;
@@ -463,7 +498,7 @@ const Adapters = {
         if (grid[7][7] !== "br") gameTracking.blackRookH8Moved = true;
       }
 
-      moveNodes.forEach((node, idx) => {
+      moveNodes.slice(0, activePlyCount).forEach((node, idx) => {
         const isWhite = idx % 2 === 0;
         const text = (node.textContent || "").trim();
         const html = node.innerHTML || "";
@@ -475,11 +510,11 @@ const Adapters = {
         const isRook = html.includes('figurine="R"') || html.includes("rook") || /^(R|Л)/i.test(text);
         if (isRook) {
           if (isWhite) {
-            if (/^(R|Л)a/i.test(text) || text.includes("a1")) gameTracking.whiteRookA1Moved = true;
-            if (/^(R|Л)h/i.test(text) || text.includes("h1")) gameTracking.whiteRookH1Moved = true;
+            if (/^(R|Л)?a[a-hx]/i.test(text) || text.includes("a1")) gameTracking.whiteRookA1Moved = true;
+            if (/^(R|Л)?h[a-hx]/i.test(text) || text.includes("h1")) gameTracking.whiteRookH1Moved = true;
           } else {
-            if (/^(R|Л)a/i.test(text) || text.includes("a8")) gameTracking.blackRookA8Moved = true;
-            if (/^(R|Л)h/i.test(text) || text.includes("h8")) gameTracking.blackRookH8Moved = true;
+            if (/^(R|Л)?a[a-hx]/i.test(text) || text.includes("a8")) gameTracking.blackRookA8Moved = true;
+            if (/^(R|Л)?h[a-hx]/i.test(text) || text.includes("h8")) gameTracking.blackRookH8Moved = true;
           }
         }
       });
@@ -514,17 +549,18 @@ const Adapters = {
           const colLetters = ["a", "b", "c", "d", "e", "f", "g", "h"];
           for (const s of sqs) {
             const p = grid[s.row][s.col];
-            if (p === "wp" && s.row === 3) {
+            if (p === "wp" && s.row === 3 && activeTurn === "b" && grid[2][s.col] === null && grid[1][s.col] === null) {
               const fromSq = sqs.find((o) => o !== s && o.col === s.col && o.row === 1);
               if (fromSq) enPassant = `${colLetters[s.col]}3`;
-            } else if (p === "bp" && s.row === 4) {
+            } else if (p === "bp" && s.row === 4 && activeTurn === "w" && grid[5][s.col] === null && grid[6][s.col] === null) {
               const fromSq = sqs.find((o) => o !== s && o.col === s.col && o.row === 6);
               if (fromSq) enPassant = `${colLetters[s.col]}6`;
             }
           }
         }
       }
-      return { rights, enPassant };
+      const fullMove = Math.max(1, Math.floor(activePlyCount / 2) + 1);
+      return { rights, enPassant, fullMove };
     },
     parseBoardToFEN(board) {
       const grid = Array.from({ length: 8 }, () => Array(8).fill(null));
@@ -566,8 +602,8 @@ const Adapters = {
         return "";
       }
       const activeTurn = this.detectTurn(board);
-      const { rights, enPassant } = this.getCastlingAndEnPassant(board, grid);
-      return `${fenRanks} ${activeTurn} ${rights} ${enPassant} 0 1`;
+      const { rights, enPassant, fullMove } = this.getCastlingAndEnPassant(board, grid, activeTurn, fenRanks);
+      return `${fenRanks} ${activeTurn} ${rights} ${enPassant} 0 ${fullMove}`;
     }
   },
 
@@ -636,7 +672,7 @@ const Adapters = {
         if (lastMoves.length === 2) {
           for (const sq of lastMoves) {
             const sqRect = sq.getBoundingClientRect();
-            const piece = Array.from((board || document).querySelectorAll("piece:not(.dragging)")).find((p) => {
+            const piece = Array.from((board || document).querySelectorAll("piece:not(.dragging):not(.fading)")).find((p) => {
               const pr = p.getBoundingClientRect();
               return Math.abs(pr.left - sqRect.left) < 6 && Math.abs(pr.top - sqRect.top) < 6;
             });
@@ -649,12 +685,16 @@ const Adapters = {
       }
       return "w";
     },
-    getCastlingAndEnPassant(board, grid) {
+    getCastlingAndEnPassant(board, grid, activeTurn = "w", fenRanks = "") {
       const moveNodes = findFirstNonEmptySelector(LICHESS_MOVE_SELECTORS);
-      if (moveNodes.length === 0 || moveNodes.length < lastPlyCount) {
+      const activeIdx = moveNodes.findIndex((n) => n.classList.contains("active"));
+      const isViewingPast = activeIdx !== -1 && activeIdx + 1 < moveNodes.length;
+      const activePlyCount = activeIdx !== -1 ? activeIdx + 1 : moveNodes.length;
+
+      if (fenRanks === STANDARD_START_FEN_RANKS || activePlyCount < lastPlyCount || isViewingPast) {
         resetGameTracking();
       }
-      lastPlyCount = moveNodes.length;
+      lastPlyCount = activePlyCount;
 
       if (!this.isDragging(board)) {
         if (grid[0][4] !== "K") gameTracking.whiteKingMoved = true;
@@ -666,7 +706,7 @@ const Adapters = {
         if (grid[7][7] !== "r") gameTracking.blackRookH8Moved = true;
       }
 
-      moveNodes.forEach((node, idx) => {
+      moveNodes.slice(0, activePlyCount).forEach((node, idx) => {
         const isWhite = idx % 2 === 0;
         const text = (node.textContent || "").trim();
         if (/^(K|O-O|0-0)/.test(text) || text.includes("O-O") || text.includes("0-0")) {
@@ -675,11 +715,11 @@ const Adapters = {
         }
         if (/^R/.test(text)) {
           if (isWhite) {
-            if (/^Ra/i.test(text) || text.includes("a1")) gameTracking.whiteRookA1Moved = true;
-            if (/^Rh/i.test(text) || text.includes("h1")) gameTracking.whiteRookH1Moved = true;
+            if (/^Ra[a-hx]/i.test(text) || text.includes("a1")) gameTracking.whiteRookA1Moved = true;
+            if (/^Rh[a-hx]/i.test(text) || text.includes("h1")) gameTracking.whiteRookH1Moved = true;
           } else {
-            if (/^Ra/i.test(text) || text.includes("a8")) gameTracking.blackRookA8Moved = true;
-            if (/^Rh/i.test(text) || text.includes("h8")) gameTracking.blackRookH8Moved = true;
+            if (/^Ra[a-hx]/i.test(text) || text.includes("a8")) gameTracking.blackRookA8Moved = true;
+            if (/^Rh[a-hx]/i.test(text) || text.includes("h8")) gameTracking.blackRookH8Moved = true;
           }
         }
       });
@@ -719,17 +759,18 @@ const Adapters = {
           const colLetters = ["a", "b", "c", "d", "e", "f", "g", "h"];
           for (const s of sqs) {
             const p = grid[s.row][s.col];
-            if (p === "P" && s.row === 3) {
+            if (p === "P" && s.row === 3 && activeTurn === "b" && grid[2][s.col] === null && grid[1][s.col] === null) {
               const fromSq = sqs.find((o) => o !== s && o.col === s.col && o.row === 1);
               if (fromSq) enPassant = `${colLetters[s.col]}3`;
-            } else if (p === "p" && s.row === 4) {
+            } else if (p === "p" && s.row === 4 && activeTurn === "w" && grid[5][s.col] === null && grid[6][s.col] === null) {
               const fromSq = sqs.find((o) => o !== s && o.col === s.col && o.row === 6);
               if (fromSq) enPassant = `${colLetters[s.col]}6`;
             }
           }
         }
       }
-      return { rights, enPassant };
+      const fullMove = Math.max(1, Math.floor(activePlyCount / 2) + 1);
+      return { rights, enPassant, fullMove };
     },
     parseBoardToFEN(board) {
       const bRect = board.getBoundingClientRect();
@@ -756,7 +797,7 @@ const Adapters = {
       }
 
       const hasDragging = !!board.querySelector("piece.dragging");
-      const pieces = board.querySelectorAll(hasDragging ? "piece:not(.dragging)" : "piece:not(.ghost)");
+      const pieces = board.querySelectorAll(hasDragging ? "piece:not(.dragging):not(.fading)" : "piece:not(.ghost):not(.fading)");
       pieces.forEach((p) => {
         if (p.classList.contains("dragging")) return;
         const pType = getPieceType(p);
@@ -793,8 +834,8 @@ const Adapters = {
         return "";
       }
       const activeTurn = this.detectTurn(board);
-      const { rights, enPassant } = this.getCastlingAndEnPassant(board, grid);
-      return `${fenRanks} ${activeTurn} ${rights} ${enPassant} 0 1`;
+      const { rights, enPassant, fullMove } = this.getCastlingAndEnPassant(board, grid, activeTurn, fenRanks);
+      return `${fenRanks} ${activeTurn} ${rights} ${enPassant} 0 ${fullMove}`;
     }
   }
 };
@@ -1208,14 +1249,10 @@ function isPositionOutdated(fen, myColor, reqId) {
   if (!liveBoard) return true;
   const liveFEN = parseBoardToFEN(liveBoard);
   if (liveFEN && liveFEN !== fen) {
-    lastAnalyzedFEN = "";
-    requestBestMoves();
     return true;
   }
   const liveTurn = detectTurn(liveBoard);
   if (liveTurn === myColor) {
-    lastAnalyzedFEN = "";
-    requestBestMoves();
     return true;
   }
   return false;
@@ -1242,13 +1279,16 @@ function setPlatform(platform) {
   lastAnalyzedFEN = "";
   lastBoardFlipped = null;
   currentObservedBoard = null;
-  setupBoardObserver();
-  requestBestMoves();
 
   const out = document.getElementById("chess-assistant-output");
   if (out) {
-    out.innerText = `${t("switchedTo")} ${Adapters[currentPlatform].name}...`;
+    out.innerText = isAutoHintEnabled
+      ? `${t("switchedTo")} ${Adapters[currentPlatform].name}...`
+      : t("hintsDisabledMsg");
   }
+
+  setupBoardObserver();
+  requestBestMoves();
 }
 
 // ==========================================
@@ -1270,22 +1310,32 @@ function requestMovesFromBackground(fen, cfg = {}) {
     };
 
     extApi.runtime.sendMessage(payload, (res) => {
-      if (extApi.runtime && extApi.runtime.lastError) {
-        // Предотвращаем предупреждение консоли при перезагрузке страницы/расширения
-      }
+      const hadRuntimeError = !!(extApi.runtime && extApi.runtime.lastError);
       if (!resolved) {
         resolved = true;
-        resolve(res || { cancelled: false, moves: [], ponderMove: null, bestMove: null, bestScore: null });
+        if (res) {
+          resolve(res);
+        } else {
+          resolve({
+            cancelled: hadRuntimeError,
+            timedOut: hadRuntimeError,
+            moves: [],
+            ponderMove: null,
+            bestMove: null,
+            bestScore: null
+          });
+        }
       }
     });
 
-    const timeoutWait = cfg.movetime
-      ? Math.max(5000, cfg.movetime + 4500)
-      : (cfg.depth ? Math.max(12000, cfg.depth * 800) : 16000);
+    const bgLimit = cfg.movetime
+      ? Math.max(4500, cfg.movetime + 4000)
+      : (cfg.depth ? Math.max(12000, cfg.depth * 800) : 15000);
+    const timeoutWait = bgLimit + 800 + 2500;
     setTimeout(() => {
       if (!resolved) {
         resolved = true;
-        resolve({ cancelled: false, moves: [], ponderMove: null, bestMove: null, bestScore: null });
+        resolve({ cancelled: true, timedOut: true, moves: [], ponderMove: null, bestMove: null, bestScore: null });
       }
     }, timeoutWait);
   });
@@ -1309,6 +1359,7 @@ function formatScore(score, matePrefix = "M") {
     return `${sign}${matePrefix}${Math.abs(score.value)}`;
   }
   const val = score.value / 100;
+  if (Math.abs(val) < 0.05) return "0.0";
   return (val > 0 ? "+" : "") + val.toFixed(1);
 }
 
@@ -1395,7 +1446,8 @@ function clearOverlay() {
 }
 
 function drawRoundedRect(ctx, x, y, w, h, r) {
-  const rad = Math.min(r, w / 2, h / 2);
+  if (w <= 0 || h <= 0) return;
+  const rad = Math.max(0, Math.min(r, w / 2, h / 2));
   ctx.beginPath();
   ctx.moveTo(x + rad, y);
   ctx.lineTo(x + w - rad, y);
@@ -1410,6 +1462,10 @@ function drawRoundedRect(ctx, x, y, w, h, r) {
 }
 
 function drawCornerBrackets(ctx, x, y, size, cornerLen, r, color, dpr) {
+  if (size <= 0) return;
+  const safeCorner = Math.max(0, Math.min(cornerLen, size / 2));
+  const safeR = Math.max(0, Math.min(r, safeCorner));
+
   ctx.save();
   ctx.strokeStyle = color;
   ctx.shadowColor = IS_MOBILE_BUILD ? "transparent" : "rgba(0, 0, 0, 0.5)";
@@ -1419,27 +1475,28 @@ function drawCornerBrackets(ctx, x, y, size, cornerLen, r, color, dpr) {
   ctx.lineJoin = "round";
 
   ctx.beginPath();
-  ctx.moveTo(x, y + cornerLen);
-  ctx.arcTo(x, y, x + cornerLen, y, r);
-  ctx.lineTo(x + cornerLen, y);
+  ctx.moveTo(x, y + safeCorner);
+  ctx.arcTo(x, y, x + safeCorner, y, safeR);
+  ctx.lineTo(x + safeCorner, y);
 
-  ctx.moveTo(x + size - cornerLen, y);
-  ctx.arcTo(x + size, y, x + size, y + cornerLen, r);
-  ctx.lineTo(x + size, y + cornerLen);
+  ctx.moveTo(x + size - safeCorner, y);
+  ctx.arcTo(x + size, y, x + size, y + safeCorner, safeR);
+  ctx.lineTo(x + size, y + safeCorner);
 
-  ctx.moveTo(x + size, y + size - cornerLen);
-  ctx.arcTo(x + size, y + size, x + size - cornerLen, y + size, r);
-  ctx.lineTo(x + size - cornerLen, y + size);
+  ctx.moveTo(x + size, y + size - safeCorner);
+  ctx.arcTo(x + size, y + size, x + size - safeCorner, y + size, safeR);
+  ctx.lineTo(x + size - safeCorner, y + size);
 
-  ctx.moveTo(x + cornerLen, y + size);
-  ctx.arcTo(x, y + size, x, y + size - cornerLen, r);
-  ctx.lineTo(x, y + size - cornerLen);
+  ctx.moveTo(x + safeCorner, y + size);
+  ctx.arcTo(x, y + size, x, y + size - safeCorner, safeR);
+  ctx.lineTo(x, y + size - safeCorner);
 
   ctx.stroke();
   ctx.restore();
 }
 
 function drawCircleReticle(ctx, cx, cy, radius, color, dpr) {
+  if (radius <= 0) return;
   ctx.save();
   ctx.strokeStyle = color;
   ctx.shadowColor = IS_MOBILE_BUILD ? "transparent" : "rgba(0, 0, 0, 0.5)";
@@ -1680,6 +1737,8 @@ function drawMulti5Badges(ctx, items, dpr, activeTurn = "w") {
   ctx.restore();
 }
 
+const UCI_MOVE_RE = /^[a-h][1-8][a-h][1-8][qrbn]?$/i;
+
 function drawAllVisuals({ moves = [], premoveMove = null, activeTurn = "w", oppMove = null } = {}) {
   lastRenderedState = { moves, premoveMove, activeTurn, oppMove };
 
@@ -1689,6 +1748,7 @@ function drawAllVisuals({ moves = [], premoveMove = null, activeTurn = "w", oppM
   const canvas = getOrCreateCanvas(board);
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
+  if (canvas.width < 16 || canvas.height < 16) return;
 
   const dpr = IS_MOBILE_BUILD ? 1.0 : (window.devicePixelRatio || 1);
   const isFlipped = isBoardFlipped(board);
@@ -1696,8 +1756,8 @@ function drawAllVisuals({ moves = [], premoveMove = null, activeTurn = "w", oppM
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  const validMoves = (moves || []).filter((m) => m && m.move && m.move.length >= 4);
-  const hasPremove = premoveMove && premoveMove.length >= 4;
+  const validMoves = (moves || []).filter((m) => m && typeof m.move === "string" && UCI_MOVE_RE.test(m.move));
+  const hasPremove = typeof premoveMove === "string" && UCI_MOVE_RE.test(premoveMove);
 
   if (validMoves.length === 0 && !hasPremove) {
     return;
@@ -1830,6 +1890,7 @@ function drawAllVisuals({ moves = [], premoveMove = null, activeTurn = "w", oppM
 // 4. Поворот экрана, ресайз и перетаскивание виджета
 // ==========================================
 function handleResizeOrOrientation() {
+  clampWidgetPosition();
   const board = getBoardElement();
   if (board) {
     getOrCreateCanvas(board);
@@ -1854,10 +1915,13 @@ let startRight = 14;
 let startBottom = 12;
 let isWidgetDragging = false;
 let hasWidgetDragged = false;
+let expandedOnPointerUp = false;
+let interactionEndTimer = null;
+let dragResetTimer = null;
 
 function clampWidgetPosition() {
   const widget = document.getElementById("chess-assistant-widget");
-  if (!widget) return;
+  if (!widget || !widget.offsetWidth || !widget.offsetHeight) return;
   const rect = widget.getBoundingClientRect();
   const maxRight = Math.max(0, window.innerWidth - widget.offsetWidth - 4);
   const maxBottom = Math.max(0, window.innerHeight - widget.offsetHeight - 4);
@@ -1884,6 +1948,7 @@ function onDragStart(clientX, clientY, target) {
   if (!widget) return false;
 
   if (isMinimized) {
+    clearTimeout(dragResetTimer);
     startX = clientX;
     startY = clientY;
     const rect = widget.getBoundingClientRect();
@@ -1911,6 +1976,7 @@ function onDragStart(clientX, clientY, target) {
   const isCorner = isTopLeft || isTopRight || isBottomLeft || isBottomRight;
 
   if (isHeader || isTopZone || isCorner) {
+    clearTimeout(dragResetTimer);
     startX = clientX;
     startY = clientY;
     startRight = window.innerWidth - rect.right;
@@ -1943,7 +2009,7 @@ function onDragMove(clientX, clientY) {
   }
 }
 
-function onDragEnd() {
+function onDragEnd(cancelled = false) {
   if (!isWidgetDragging) return;
   const widget = document.getElementById("chess-assistant-widget");
   const wasDragged = hasWidgetDragged;
@@ -1952,8 +2018,12 @@ function onDragEnd() {
     if (wasDragged) {
       safeSetStorage("chess_widget_pos_r", widget.style.right);
       safeSetStorage("chess_widget_pos_b", widget.style.bottom);
-    } else if (isMinimized) {
+    } else if (!cancelled && isMinimized) {
       isMinimized = false;
+      expandedOnPointerUp = true;
+      setTimeout(() => {
+        expandedOnPointerUp = false;
+      }, 250);
       widget.classList.remove("minimized");
       const minBtn = document.getElementById("btn-minimize-widget");
       if (minBtn) minBtn.innerText = "_";
@@ -1963,16 +2033,19 @@ function onDragEnd() {
     }
   }
   isWidgetDragging = false;
-  setTimeout(() => {
+  clearTimeout(dragResetTimer);
+  dragResetTimer = setTimeout(() => {
     hasWidgetDragged = false;
   }, 100);
 }
 
 function handleBoardInteractionEnd() {
-  if (isUserInteractingWithBoard) {
-    isUserInteractingWithBoard = false;
-  }
-  setTimeout(() => {
+  const wasInteracting = isUserInteractingWithBoard;
+  isUserInteractingWithBoard = false;
+  if (!wasInteracting) return;
+
+  clearTimeout(interactionEndTimer);
+  interactionEndTimer = setTimeout(() => {
     const board = getBoardElement();
     if (!board || isInteractingWithBoard(board)) return;
     if (!isAutoHintEnabled) return;
@@ -2029,7 +2102,18 @@ async function requestBestMoves() {
     const oppRes = await requestMovesFromBackground(fen, { movetime: 1800, depth: 14, multiPV: 5 });
 
     if (reqId !== currentRequestId || !isAutoHintEnabled || !isPremovesEnabled || !isOnlyMyTurnEnabled) return;
-    if (isPositionOutdated(fen, myColor, reqId)) return;
+    if (!oppRes || oppRes.cancelled) {
+      if (lastAnalyzedFEN === fen) lastAnalyzedFEN = "";
+      if (output) output.innerText = t("oppTurnWait");
+      return;
+    }
+    if (isPositionOutdated(fen, myColor, reqId)) {
+      if (reqId === currentRequestId && isAutoHintEnabled) {
+        lastAnalyzedFEN = "";
+        requestBestMoves();
+      }
+      return;
+    }
 
     const oppMoves = oppRes?.moves || [];
     if (oppMoves.length === 0) {
@@ -2045,9 +2129,13 @@ async function requestBestMoves() {
 
     // Оценка текущей позиции со стороны нашего игрока E_current
     const bestOppScore = oppMoves[0].score;
-    const oppCp = bestOppScore?.type === "mate"
+    if (!bestOppScore) {
+      if (output) output.innerText = t("oppTurnWait");
+      return;
+    }
+    const oppCp = bestOppScore.type === "mate"
       ? (bestOppScore.value > 0 ? 10000 : -10000)
-      : (bestOppScore?.value || 0);
+      : (bestOppScore.value || 0);
     const E_current = -oppCp;
 
     // Если текущая позиция уже в минусе (< 0.0), безопасный премув невозможен
@@ -2060,11 +2148,15 @@ async function requestBestMoves() {
     const branchesToCheck = oppMoves.slice(0, 5);
     let worstAfterPremove = E_current;
     let isPremoveSafe = true;
+    let checkedBranches = 0;
 
     for (const opp of branchesToCheck) {
       const sim = new ChessSimulator(fen);
       const oppOk = sim.makeMove(opp.move);
-      if (!oppOk) continue;
+      if (!oppOk) {
+        isPremoveSafe = false;
+        break;
+      }
 
       const fromSq = candidatePremove.slice(0, 2);
       const toSq = candidatePremove.slice(2, 4);
@@ -2098,19 +2190,35 @@ async function requestBestMoves() {
       }
 
       let E_branch = E_current;
-      if (opp.ponder === candidatePremove) {
+      if (opp.ponder === candidatePremove && opp.score) {
         const bScore = opp.score;
-        const bCp = bScore?.type === "mate" ? (bScore.value > 0 ? 10000 : -10000) : (bScore?.value || 0);
+        const bCp = bScore.type === "mate" ? (bScore.value > 0 ? 10000 : -10000) : (bScore.value || 0);
         E_branch = -bCp;
       } else {
         const branchFEN = sim.toFEN();
         const branchRes = await requestMovesFromBackground(branchFEN, { movetime: 100, depth: 8, multiPV: 1 });
         if (reqId !== currentRequestId || !isAutoHintEnabled || !isPremovesEnabled || !isOnlyMyTurnEnabled) return;
-        if (isPositionOutdated(fen, myColor, reqId)) return;
-        const bScore = branchRes?.moves[0]?.score;
+        if (isPositionOutdated(fen, myColor, reqId)) {
+          if (reqId === currentRequestId && isAutoHintEnabled) {
+            lastAnalyzedFEN = "";
+            requestBestMoves();
+          }
+          return;
+        }
+        const bScore = branchRes?.moves?.[0]?.score;
+        if (!branchRes || branchRes.cancelled) {
+          isPremoveSafe = false;
+          break;
+        }
         if (bScore) {
           const bCp = bScore.type === "mate" ? (bScore.value > 0 ? 10000 : -10000) : bScore.value;
           E_branch = -bCp;
+        } else if (!branchRes.moves || branchRes.moves.length === 0) {
+          // Нет легальных ходов у соперника: мат в нашу пользу или пат
+          E_branch = sim.isCheck(oppColor) ? 10000 : 0;
+        } else {
+          isPremoveSafe = false;
+          break;
         }
       }
 
@@ -2122,11 +2230,12 @@ async function requestBestMoves() {
       if (E_branch < worstAfterPremove) {
         worstAfterPremove = E_branch;
       }
+      checkedBranches++;
     }
 
     if (reqId !== currentRequestId || !isAutoHintEnabled || !isPremovesEnabled || !isOnlyMyTurnEnabled) return;
 
-    if (!isPremoveSafe || worstAfterPremove < 0 || (E_current - worstAfterPremove > 30)) {
+    if (!isPremoveSafe || checkedBranches === 0 || worstAfterPremove < 0 || (E_current - worstAfterPremove > 30)) {
       clearOverlay();
       lastRenderedState = null;
       if (output) output.innerText = t("oppTurnWait");
@@ -2152,13 +2261,13 @@ async function requestBestMoves() {
   if (amateurModeEnabled) {
     cfg = { ...cfg, depth: curLegitConfig.depth, movetime: null };
     if (output) {
-      output.innerText = `${curLegitConfig.name} — ${t("searchingTurn")} (${turnName})...`;
+      output.innerText = `${t(curLegitConfig.nameKey)} — ${t("searchingTurn")} (${turnName})...`;
     }
   } else if (output) {
     if (speedMode === "ultra") {
-      output.innerText = `${t("ultraThinking")} (${turnName}, ~7s)...`;
+      output.innerText = `${t("ultraThinking")} (${turnName}, ~7${t("unitSec")})...`;
     } else {
-      output.innerText = `${cfg.name} — ${t("searchingTurn")} (${turnName})...`;
+      output.innerText = `${t(cfg.nameKey)} — ${t("searchingTurn")} (${turnName})...`;
     }
   }
 
@@ -2174,7 +2283,7 @@ async function requestBestMoves() {
   if (reqId !== currentRequestId || !isAutoHintEnabled) return;
 
   // Легит-режим: естественная пауза перед показом стрелки
-  if (amateurModeEnabled && !isOpponentTurn) {
+  if (amateurModeEnabled && !isOpponentTurn && res && !res.cancelled && res.moves && res.moves.length > 0) {
     const baseDelay = parseInt(legitDelay, 10) || 1000;
     const jitter = (Math.random() * 0.24 - 0.12) * baseDelay;
     const delay = Math.max(15, Math.round(baseDelay + jitter));
@@ -2206,40 +2315,40 @@ function formatMovesLog(moves, activeTurn, isFlipped) {
     if (!score) return "";
     const cp = score.type === "mate" ? (score.value > 0 ? 10000 : -10000) : score.value;
     const whiteCp = activeTurn === "w" ? cp : -cp;
+    if (score.type !== "mate" && Math.abs(whiteCp) <= 25) return "";
     const isMine = (myColor === "w" && whiteCp > 0) || (myColor === "b" && whiteCp < 0);
     return isMine ? t("inYourFavor") : t("opponentAdvantage");
+  };
+  const formatScorePart = (score, matePrefix) => {
+    const normalized = normalizeScoreToWhite(score, activeTurn);
+    const s = formatScore(normalized, matePrefix);
+    if (!s) return "";
+    const whoText = who(score);
+    return whoText ? ` [${s} • ${whoText}]` : ` [${s}]`;
   };
 
   if (IS_MOBILE_BUILD) {
     const m = moves[0];
-    const normalized = normalizeScoreToWhite(m.score, activeTurn);
-    const s = formatScore(normalized, "M");
-    const scorePart = s ? ` [${s} • ${who(m.score)}]` : "";
+    const scorePart = formatScorePart(m.score, "M");
     return `${t("bestMovePhone")} ${m.move.slice(0, 2).toUpperCase()} ➔ ${m.move.slice(2, 4).toUpperCase()}${scorePart}`;
   }
 
   if (arrowMode === "multi1") {
     const m = moves[0];
-    const normalized = normalizeScoreToWhite(m.score, activeTurn);
-    const s = formatScore(normalized, "M");
-    const scorePart = s ? ` [${s} • ${who(m.score)}]` : "";
+    const scorePart = formatScorePart(m.score, "M");
     return `#1: ${m.move.slice(0, 2).toUpperCase()} ➔ ${m.move.slice(2, 4).toUpperCase()}${scorePart}`;
   }
 
   if (arrowMode === "multi5") {
     return moves.slice(0, 5).map((m, i) => {
-      const normalized = normalizeScoreToWhite(m.score, activeTurn);
-      const s = formatScore(normalized, "#M");
-      const scorePart = s ? ` [${s} • ${who(m.score)}]` : "";
+      const scorePart = formatScorePart(m.score, "#M");
       return `#${i + 1}: ${m.move.slice(0, 2).toUpperCase()} ➔ ${m.move.slice(2, 4).toUpperCase()}${scorePart}`;
     }).join("\n");
   }
 
   const labels = [t("label1st"), t("label2nd"), t("label3rd")];
   return moves.slice(0, 3).map((m, i) => {
-    const normalized = normalizeScoreToWhite(m.score, activeTurn);
-    const s = formatScore(normalized, "M");
-    const scorePart = s ? ` [${s} • ${who(m.score)}]` : "";
+    const scorePart = formatScorePart(m.score, "M");
     return `${labels[i]}: ${m.move.slice(0, 2).toUpperCase()} ➔ ${m.move.slice(2, 4).toUpperCase()}${scorePart}`;
   }).join("\n");
 }
@@ -2248,6 +2357,10 @@ function onAnalysisReceived(res, fen, isOpponentTurn, reqId) {
   if (reqId !== undefined && reqId !== currentRequestId) return;
   if (!res || res.cancelled) {
     if (lastAnalyzedFEN === fen) lastAnalyzedFEN = "";
+    if (res && res.timedOut) {
+      const output = document.getElementById("chess-assistant-output");
+      if (output && isAutoHintEnabled) output.innerText = t("readyMsg");
+    }
     return;
   }
   if (!isAutoHintEnabled) {
@@ -2305,7 +2418,7 @@ function onAnalysisReceived(res, fen, isOpponentTurn, reqId) {
   updateEvalBar(bestScore, activeTurn);
   drawAllVisuals({
     moves: displayMoves,
-    premoveMove: isOpponentTurn ? res.ponderMove : null,
+    premoveMove: (isOpponentTurn && isPremovesEnabled) ? res.ponderMove : null,
     activeTurn
   });
 
@@ -2314,7 +2427,7 @@ function onAnalysisReceived(res, fen, isOpponentTurn, reqId) {
     if (amateurModeEnabled && !isOpponentTurn) {
       text = `${t("amateurModeOn")}\n` + text;
     }
-    if (isOpponentTurn && res.ponderMove) {
+    if (isOpponentTurn && isPremovesEnabled && res.ponderMove) {
       const pm = res.ponderMove;
       text += `\n${t("premoveLabel")} ${pm.slice(0, 2).toUpperCase()} ➔ ${pm.slice(2, 4).toUpperCase()}`;
     }
@@ -2327,7 +2440,20 @@ function onAnalysisReceived(res, fen, isOpponentTurn, reqId) {
 // ==========================================
 function setupBoardObserver() {
   const board = getBoardElement();
-  if (!board) return;
+  if (!board) {
+    if (boardObserver) {
+      boardObserver.disconnect();
+      boardObserver = null;
+    }
+    if (boardResizeObserver) {
+      boardResizeObserver.disconnect();
+      boardResizeObserver = null;
+    }
+    currentObservedBoard = null;
+    const staleCanvas = document.getElementById("chess-canvas-overlay");
+    if (staleCanvas) staleCanvas.remove();
+    return;
+  }
 
   if (board !== currentObservedBoard) {
     if (boardObserver) {
@@ -2346,6 +2472,9 @@ function setupBoardObserver() {
         lastRenderedState = null;
         lastAnalyzedFEN = "";
         clearTimeout(debounceTimer);
+        if (lastEvalState && lastEvalState.score) {
+          updateEvalBar(lastEvalState.score, lastEvalState.activeTurn);
+        }
         if (isAutoHintEnabled) requestBestMoves();
         return;
       }
@@ -2401,12 +2530,16 @@ function toggleWidgetMinimize() {
 // ==========================================
 function setLanguage(lang) {
   if (lang !== "ru" && lang !== "en") return;
+  if (lang === currentLang) return;
 
   const oldOutput = document.getElementById("chess-assistant-output")?.innerText || "";
   const oldReady = t("readyMsg");
   const oldDisabled = t("hintsDisabledMsg");
   const oldOppWait = t("oppTurnWait");
+  const oldOppPremove = t("oppTurnPremove");
+  const oldNoMoves = t("noMovesMsg");
   const oldBoardNotFound = t("boardNotFound");
+  const oldBoardNotFoundWarn = t("boardNotFoundWarn");
 
   currentLang = lang;
   safeSetStorage("chess_lang", currentLang);
@@ -2441,6 +2574,10 @@ function setLanguage(lang) {
           if (amateurModeEnabled && !isOppTurn) {
             text = `${t("amateurModeOn")}\n` + text;
           }
+          if (isOppTurn && isPremovesEnabled && lastRenderedState.premoveMove) {
+            const pm = lastRenderedState.premoveMove;
+            text += `\n${t("premoveLabel")} ${pm.slice(0, 2).toUpperCase()} ➔ ${pm.slice(2, 4).toUpperCase()}`;
+          }
           newOut.innerText = text;
         } else if (lastRenderedState.premoveMove) {
           const pm = lastRenderedState.premoveMove;
@@ -2454,8 +2591,14 @@ function setLanguage(lang) {
         newOut.innerText = t("hintsDisabledMsg");
       } else if (oldOutput === oldOppWait) {
         newOut.innerText = t("oppTurnWait");
+      } else if (oldOutput === oldOppPremove) {
+        newOut.innerText = t("oppTurnPremove");
+      } else if (oldOutput === oldNoMoves) {
+        newOut.innerText = t("noMovesMsg");
       } else if (oldOutput === oldBoardNotFound) {
         newOut.innerText = t("boardNotFound");
+      } else if (oldOutput === oldBoardNotFoundWarn) {
+        newOut.innerText = t("boardNotFoundWarn");
       } else if (oldOutput === oldDisabled) {
         newOut.innerText = t("hintsDisabledMsg");
       } else if (oldOutput && oldOutput !== oldReady) {
@@ -2506,7 +2649,7 @@ function createWidget() {
   const widget = document.createElement("div");
   widget.id = "chess-assistant-widget";
   widget.innerHTML = `
-    <div class="widget-drag-handle" title="Потяни, чтобы переместить"></div>
+    <div class="widget-drag-handle" title="${t("dragHandleTip")}"></div>
     <div class="widget-header">
       <h3>
         <span>${IS_MOBILE_BUILD ? t("titlePhone") : t("title")}</span>
@@ -2514,7 +2657,7 @@ function createWidget() {
         <button id="btn-settings-widget" class="btn-settings" title="${t("settingsTitle")}">&#9881;</button>
       </h3>
       <div class="header-controls">
-        <button id="btn-minimize-widget" class="btn-minimize" title="Свернуть / Развернуть">${isMinimized ? "+" : "_"}</button>
+        <button id="btn-minimize-widget" class="btn-minimize" title="${t("minimizeTip")}">${isMinimized ? "+" : "_"}</button>
       </div>
     </div>
 
@@ -2533,7 +2676,7 @@ function createWidget() {
       <div id="chess-settings-panel" class="widget-settings-panel" style="display: none;">
         <div class="settings-panel-header">
           <span>${t("settingsTitle")}</span>
-          <button id="btn-close-settings" class="btn-panel-close" title="Закрыть">&#x2715;</button>
+          <button id="btn-close-settings" class="btn-panel-close" title="${t("closeTip")}">&#x2715;</button>
         </div>
 
         <!-- 0. Выбор языка (Language: RU / EN) -->
@@ -2567,11 +2710,11 @@ function createWidget() {
             <span>${t("amateurModeLabel")}</span>
           </div>
           <div class="style-buttons-row" style="flex-direction: column; gap: 4px;">
-            <button type="button" class="btn-style-pill btn-legit-pill ${amateurMode === 'legit1' ? 'active' : ''}" data-legit="legit1" style="padding: 5px 8px; font-size: 10px; display: flex; justify-content: space-between; align-items: center;" title="Точность ~85% • Клубный уровень">
+            <button type="button" class="btn-style-pill btn-legit-pill ${amateurMode === 'legit1' ? 'active' : ''}" data-legit="legit1" style="padding: 5px 8px; font-size: 10px; display: flex; justify-content: space-between; align-items: center;" title="${t("legit1Tip")}">
               <span><b>${t("legit1Title")}</b></span>
               <span style="opacity: 0.85; font-size: 9px;">${t("legit1Desc")}</span>
             </button>
-            <button type="button" class="btn-style-pill btn-legit-pill ${amateurMode === 'legit2' ? 'active' : ''}" data-legit="legit2" style="padding: 5px 8px; font-size: 10px; display: flex; justify-content: space-between; align-items: center;" title="Точность ~75% • Безопасный любитель">
+            <button type="button" class="btn-style-pill btn-legit-pill ${amateurMode === 'legit2' ? 'active' : ''}" data-legit="legit2" style="padding: 5px 8px; font-size: 10px; display: flex; justify-content: space-between; align-items: center;" title="${t("legit2Tip")}">
               <span><b>${t("legit2Title")}</b></span>
               <span style="opacity: 0.85; font-size: 9px;">${t("legit2Desc")}</span>
             </button>
@@ -2584,13 +2727,13 @@ function createWidget() {
             <span>${t("legitDelayLabel")}</span>
           </div>
           <div class="legit-delay-row">
-            <button type="button" class="btn-style-pill btn-delay-pill ${legitDelay === '50' ? 'active' : ''}" data-delay="50" title="Задержка 50 мс">50 мс</button>
-            <button type="button" class="btn-style-pill btn-delay-pill ${legitDelay === '250' ? 'active' : ''}" data-delay="250" title="Задержка 250 мс">250 мс</button>
-            <button type="button" class="btn-style-pill btn-delay-pill ${legitDelay === '500' ? 'active' : ''}" data-delay="500" title="Задержка 500 мс">500 мс</button>
-            <button type="button" class="btn-style-pill btn-delay-pill ${legitDelay === '1000' ? 'active' : ''}" data-delay="1000" title="Задержка 1 с">1 с</button>
-            <button type="button" class="btn-style-pill btn-delay-pill ${legitDelay === '2000' ? 'active' : ''}" data-delay="2000" title="Задержка 2 с">2 с</button>
-            <button type="button" class="btn-style-pill btn-delay-pill ${legitDelay === '3000' ? 'active' : ''}" data-delay="3000" title="Задержка 3 с">3 с</button>
-            <button type="button" class="btn-style-pill btn-delay-pill ${legitDelay === '5000' ? 'active' : ''}" data-delay="5000" title="Задержка 5 с">5 с</button>
+            <button type="button" class="btn-style-pill btn-delay-pill ${legitDelay === '50' ? 'active' : ''}" data-delay="50" title="${t("delayPrefix")} 50 ${t("unitMs")}">50 ${t("unitMs")}</button>
+            <button type="button" class="btn-style-pill btn-delay-pill ${legitDelay === '250' ? 'active' : ''}" data-delay="250" title="${t("delayPrefix")} 250 ${t("unitMs")}">250 ${t("unitMs")}</button>
+            <button type="button" class="btn-style-pill btn-delay-pill ${legitDelay === '500' ? 'active' : ''}" data-delay="500" title="${t("delayPrefix")} 500 ${t("unitMs")}">500 ${t("unitMs")}</button>
+            <button type="button" class="btn-style-pill btn-delay-pill ${legitDelay === '1000' ? 'active' : ''}" data-delay="1000" title="${t("delayPrefix")} 1 ${t("unitSec")}">1 ${t("unitSec")}</button>
+            <button type="button" class="btn-style-pill btn-delay-pill ${legitDelay === '2000' ? 'active' : ''}" data-delay="2000" title="${t("delayPrefix")} 2 ${t("unitSec")}">2 ${t("unitSec")}</button>
+            <button type="button" class="btn-style-pill btn-delay-pill ${legitDelay === '3000' ? 'active' : ''}" data-delay="3000" title="${t("delayPrefix")} 3 ${t("unitSec")}">3 ${t("unitSec")}</button>
+            <button type="button" class="btn-style-pill btn-delay-pill ${legitDelay === '5000' ? 'active' : ''}" data-delay="5000" title="${t("delayPrefix")} 5 ${t("unitSec")}">5 ${t("unitSec")}</button>
           </div>
         </div>
       </div>
@@ -2631,10 +2774,10 @@ function createWidget() {
 
       <div class="chess-controls-group">
         <div class="chess-row">
-          <button id="btn-refresh-hints" class="primary" title="Обновить расчёт [R / К]">
+          <button id="btn-refresh-hints" class="primary" title="${t("refreshTip")}">
             ${t("refreshBtn")}
           </button>
-          <button id="btn-toggle-hints" class="btn-toggle-hints ${isAutoHintEnabled ? "" : "hints-off"}" title="Скрыть / показать стрелки [H / Р]">
+          <button id="btn-toggle-hints" class="btn-toggle-hints ${isAutoHintEnabled ? "" : "hints-off"}" title="${t("toggleTip")}">
             ${isAutoHintEnabled ? t("disableBtn") : t("enableBtn")}
           </button>
         </div>
@@ -2656,8 +2799,8 @@ function createWidget() {
       </div>
 
       <!-- Угловые зоны для удобного перетаскивания открытого меню -->
-      <div class="widget-corner-grip bl" title="Потяни за угол"></div>
-      <div class="widget-corner-grip br" title="Потяни за угол"></div>
+      <div class="widget-corner-grip bl" title="${t("cornerGripTip")}"></div>
+      <div class="widget-corner-grip br" title="${t("cornerGripTip")}"></div>
     </div>
   `;
 
@@ -2678,8 +2821,18 @@ function createWidget() {
     if (minBtn) minBtn.innerText = "+";
   }
 
+  if (savedR && savedB) {
+    requestAnimationFrame(() => {
+      clampWidgetPosition();
+    });
+  }
+
   minBtn.addEventListener("click", (e) => {
     e.stopPropagation();
+    if (hasWidgetDragged || expandedOnPointerUp) {
+      expandedOnPointerUp = false;
+      return;
+    }
     toggleWidgetMinimize();
   });
 
@@ -2719,6 +2872,11 @@ function createWidget() {
     e.stopPropagation();
     const isHidden = settingsPanel.style.display === "none";
     settingsPanel.style.display = isHidden ? "block" : "none";
+    if (isHidden) {
+      requestAnimationFrame(() => {
+        clampWidgetPosition();
+      });
+    }
   });
 
   closeSettingsBtn.addEventListener("click", (e) => {
@@ -2882,8 +3040,18 @@ function createWidget() {
     clearTimeout(debounceTimer);
     resetGameTracking();
 
-    if (!board) {
+    if (!isAutoHintEnabled) {
+      if (out) out.innerText = t("hintsDisabledMsg");
+      return;
+    }
+
+    if (!board || !parseBoardToFEN(board)) {
       if (out) out.innerText = t("boardNotFoundWarn");
+      return;
+    }
+
+    if (isInteractingWithBoard(board)) {
+      if (out) out.innerText = t("readyMsg");
       return;
     }
 
@@ -2907,9 +3075,6 @@ function createWidget() {
       requestBestMoves();
     }
   }
-
-  refreshHintsFn = refreshHints;
-  toggleHintsFn = toggleHints;
 
   if (refreshHintsBtn) {
     refreshHintsBtn.addEventListener("click", refreshHints);
@@ -2958,7 +3123,7 @@ function createWidget() {
         clearOverlay();
         lastRenderedState = null;
         const out = document.getElementById("chess-assistant-output");
-        if (out) out.innerText = t("readyMsg");
+        if (out) out.innerText = isAutoHintEnabled ? t("readyMsg") : t("hintsDisabledMsg");
       }
       requestBestMoves();
     });
@@ -2968,7 +3133,7 @@ function createWidget() {
 }
 
 // ==========================================
-// 8. Инициализация событий окна и горячих клавиш
+// 8. Инициализация событий окна
 // ==========================================
 if (typeof window !== "undefined" && typeof document !== "undefined") {
   window.addEventListener("resize", handleResizeOrOrientation);
@@ -2999,19 +3164,22 @@ if (typeof window !== "undefined" && typeof document !== "undefined") {
     if (isWidgetDragging) onDragEnd();
   }, { passive: true });
   window.addEventListener("touchcancel", () => {
-    if (isWidgetDragging) onDragEnd();
+    if (isWidgetDragging) onDragEnd(true);
   }, { passive: true });
+  window.addEventListener("blur", () => {
+    if (isWidgetDragging) onDragEnd(true);
+    handleBoardInteractionEnd();
+  });
 
   window.addEventListener("pointerdown", (e) => {
     const board = getBoardElement();
-    if (board && (board.contains(e.target) || (e.target.closest && e.target.closest("wc-chess-board, chess-board, cg-board, .cg-wrap")))) {
+    if (board && e.target && (board.contains(e.target) || (e.target.closest && e.target.closest("wc-chess-board, chess-board, cg-board, .cg-wrap")))) {
       isUserInteractingWithBoard = true;
     }
   }, { capture: true, passive: true });
 
   window.addEventListener("pointerup", handleBoardInteractionEnd, { capture: true, passive: true });
   window.addEventListener("pointercancel", handleBoardInteractionEnd, { capture: true, passive: true });
-  window.addEventListener("mouseup", handleBoardInteractionEnd, { capture: true, passive: true });
   window.addEventListener("touchend", handleBoardInteractionEnd, { capture: true, passive: true });
 
   if (typeof extApi !== "undefined" && extApi.runtime && extApi.runtime.onMessage) {
@@ -3020,31 +3188,6 @@ if (typeof window !== "undefined" && typeof document !== "undefined") {
         toggleWidgetMinimize();
         sendResponse({ ok: true, isMinimized });
         return true;
-      }
-    });
-  }
-
-  if (!shortcutsBound) {
-    shortcutsBound = true;
-    window.addEventListener("keydown", (e) => {
-      const activeEl = document.activeElement;
-      const tag = activeEl ? activeEl.tagName : "";
-      if (tag === "INPUT" || tag === "TEXTAREA" || (activeEl && activeEl.isContentEditable)) {
-        return;
-      }
-      if (e.ctrlKey || e.altKey || e.metaKey) return;
-
-      const key = e.key ? e.key.toLowerCase() : "";
-      if (key === "h" || key === "р") {
-        e.preventDefault();
-        if (typeof toggleHintsFn === "function") {
-          toggleHintsFn();
-        }
-      } else if (key === "r" || key === "к") {
-        e.preventDefault();
-        if (typeof refreshHintsFn === "function") {
-          refreshHintsFn();
-        }
       }
     });
   }

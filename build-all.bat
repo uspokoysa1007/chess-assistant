@@ -1,6 +1,7 @@
 @echo off
 setlocal
 set "ROOT=%~dp0"
+set "AGY=%LOCALAPPDATA%\Programs\Antigravity IDE\Antigravity IDE.exe"
 
 where node >nul 2>nul
 if %errorlevel%==0 (
@@ -12,7 +13,6 @@ if %errorlevel%==0 (
   if errorlevel 1 exit /b 1
 ) else (
   set "ELECTRON_RUN_AS_NODE=1"
-  set "AGY=%LOCALAPPDATA%\Programs\Antigravity IDE\Antigravity IDE.exe"
   echo [1/2] Building PC version...
   "%AGY%" "%ROOT%chess-assistant\build.js"
   if errorlevel 1 exit /b 1

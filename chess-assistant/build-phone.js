@@ -38,10 +38,11 @@ function escapeAndMinifyJson(obj) {
 }
 
 // 3. manifest.json
+const srcManifest = JSON.parse(fs.readFileSync(path.join(SRC_DIR, 'manifest.json'), 'utf8'));
 const manifest = {
   manifest_version: 3,
   name: 'Шахматный Помощник (Mobile)',
-  version: '2.4',
+  version: srcManifest.version || '2.4',
   description: 'Мобильный шахматный плагин со Stockfish 19 WASM Lite',
   permissions: ['activeTab'],
   action: {
@@ -169,7 +170,7 @@ css = css.replace(/backdrop-filter:\s*blur\([^)]*\);?/gi, '');
 css = (css + '\n' + mobileCssOverrides)
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .replace(/\s+/g, ' ')
-  .replace(/\s*([{}:;,>+~])\s*/g, '$1')
+  .replace(/\s*([{}:;,>~])\s*/g, '$1')
   .replace(/;}/g, '}')
   .trim();
 fs.writeFileSync(path.join(PHONE_DIR, 'content', 'overlay.css'), css, 'utf8');

@@ -18,6 +18,8 @@ let candidates = [];
 let isSearching = false;
 let currentSearch = null; // { fen, options, resolve, timer, emergencyTimer, stopSent, cancelled }
 let nextSearch = null;    // { fen, options, resolve }
+let staleBestmovesPending = 0;
+let wedgedWorkerTimer = null;
 
 const EMPTY_SEARCH_RESULT = {
   cancelled: false,
@@ -52,6 +54,11 @@ function initStockfish() {
       stockfish = null;
       isReady = false;
       isUciOk = false;
+      staleBestmovesPending = 0;
+      if (wedgedWorkerTimer) {
+        clearTimeout(wedgedWorkerTimer);
+        wedgedWorkerTimer = null;
+      }
 
       if (crashedWorker) {
         try {
@@ -61,7 +68,8 @@ function initStockfish() {
 
       if (currentSearch) {
         finishCurrentSearch({ ...EMPTY_SEARCH_RESULT });
-      } else if (nextSearch) {
+      }
+      if (nextSearch) {
         const pending = nextSearch;
         nextSearch = null;
         pending.resolve({ ...EMPTY_SEARCH_RESULT });
@@ -98,11 +106,30 @@ function initStockfish() {
         } else {
           console.log(`✅ [Stockfish 19 FULL NNUE] Готов! MultiPV = ${currentMultiPV}`);
         }
-        if (nextSearch) {
+        if (nextSearch && !isSearching && staleBestmovesPending === 0) {
           const next = nextSearch;
           nextSearch = null;
           startSearch(next.fen, next.options, next.resolve);
         }
+      }
+
+      // Если ждём запоздавший bestmove от принудительно сброшенного расчёта — не смешиваем его с новым
+      if (staleBestmovesPending > 0) {
+        if (line.startsWith("bestmove")) {
+          staleBestmovesPending = Math.max(0, staleBestmovesPending - 1);
+          if (staleBestmovesPending === 0) {
+            if (wedgedWorkerTimer) {
+              clearTimeout(wedgedWorkerTimer);
+              wedgedWorkerTimer = null;
+            }
+            if (nextSearch && stockfish && isReady && !isSearching) {
+              const next = nextSearch;
+              nextSearch = null;
+              startSearch(next.fen, next.options, next.resolve);
+            }
+          }
+        }
+        return;
       }
 
       // Универсальный парсинг линий MultiPV (1..5) + второго хода (ponder / премув)
@@ -115,19 +142,31 @@ function initStockfish() {
               candidates[idx] = { move: null, score: null, ponder: null };
             }
 
+            const isBound = /\b(lowerbound|upperbound)\b/.test(line);
+
             const cpMatch = line.match(/\bscore\s+cp\s+(-?\d+)/);
             const mateMatch = line.match(/\bscore\s+mate\s+(-?\d+)/);
-            if (cpMatch) {
-              candidates[idx].score = { type: "cp", value: parseInt(cpMatch[1], 10) };
-            } else if (mateMatch) {
-              candidates[idx].score = { type: "mate", value: parseInt(mateMatch[1], 10) };
+            if (!isBound || !candidates[idx].score) {
+              if (cpMatch) {
+                candidates[idx].score = { type: "cp", value: parseInt(cpMatch[1], 10) };
+              } else if (mateMatch) {
+                candidates[idx].score = { type: "mate", value: parseInt(mateMatch[1], 10) };
+              }
             }
 
             const pvMatch = line.match(/\bpv\s+(.+)$/);
-            if (pvMatch) {
+            if (pvMatch && (!isBound || !candidates[idx].move)) {
               const pvMoves = pvMatch[1].trim().split(/\s+/);
-              if (pvMoves[0] && pvMoves[0] !== "(none)") candidates[idx].move = pvMoves[0];
-              if (pvMoves[1] && pvMoves[1] !== "(none)") candidates[idx].ponder = pvMoves[1];
+              if (pvMoves[0] && pvMoves[0] !== "(none)") {
+                const newMove = pvMoves[0];
+                const moveChanged = candidates[idx].move !== newMove;
+                candidates[idx].move = newMove;
+                if (pvMoves[1] && pvMoves[1] !== "(none)") {
+                  candidates[idx].ponder = pvMoves[1];
+                } else if (moveChanged) {
+                  candidates[idx].ponder = null;
+                }
+              }
             }
           }
         }
@@ -139,8 +178,8 @@ function initStockfish() {
         const bestFromLine = parts[1] && parts[1] !== "(none)" ? parts[1] : null;
         const ponderFromLine = (parts[2] === "ponder" && parts[3] && parts[3] !== "(none)") ? parts[3] : null;
 
-        const moves = buildMovesResult(bestFromLine);
-        const ponderMove = candidates[0]?.ponder || ponderFromLine || null;
+        const moves = buildMovesResult(bestFromLine, ponderFromLine);
+        const ponderMove = (moves[0]?.move === bestFromLine ? (ponderFromLine || moves[0]?.ponder) : moves[0]?.ponder) || ponderFromLine || null;
 
         console.log(`🎯 [Stockfish PV=${currentMultiPV}] Ходы:`, moves.map((m) => m.move).join(", "), "| Премув:", ponderMove);
 
@@ -163,7 +202,7 @@ function initStockfish() {
   }
 }
 
-function buildMovesResult(fallbackBest) {
+function buildMovesResult(fallbackBest, fallbackPonder = null) {
   const result = [];
   const seen = new Set();
 
@@ -179,18 +218,74 @@ function buildMovesResult(fallbackBest) {
     }
   }
 
-  if (result.length === 0 && fallbackBest && fallbackBest !== "(none)") {
-    result.push({
-      move: fallbackBest,
-      score: candidates[0]?.score || null,
-      ponder: candidates[0]?.ponder || null
-    });
+  if (fallbackBest && fallbackBest !== "(none)") {
+    const existingIdx = result.findIndex((m) => m.move === fallbackBest);
+    if (existingIdx > 0) {
+      const [bestItem] = result.splice(existingIdx, 1);
+      result.unshift(bestItem);
+    } else if (existingIdx === -1) {
+      result.unshift({
+        move: fallbackBest,
+        score: candidates[0]?.score || null,
+        ponder: fallbackPonder || null
+      });
+      if (result.length > currentMultiPV) {
+        result.length = currentMultiPV;
+      }
+    }
+    if (result[0] && result[0].move === fallbackBest && !result[0].ponder && fallbackPonder) {
+      result[0].ponder = fallbackPonder;
+    }
   }
 
   return result;
 }
 
 initStockfish();
+
+function scheduleEmergencyReset(searchState) {
+  if (!searchState || searchState.emergencyTimer) return;
+  searchState.emergencyTimer = setTimeout(() => {
+    if (currentSearch === searchState) {
+      staleBestmovesPending++;
+      if (wedgedWorkerTimer) clearTimeout(wedgedWorkerTimer);
+      wedgedWorkerTimer = setTimeout(() => {
+        if (staleBestmovesPending > 0) {
+          console.warn("⚠️ [Stockfish] Воркер завис окончательно, перезапускаем...");
+          const hungWorker = stockfish;
+          stockfish = null;
+          isReady = false;
+          isUciOk = false;
+          staleBestmovesPending = 0;
+          wedgedWorkerTimer = null;
+          if (hungWorker) {
+            try {
+              hungWorker.terminate();
+            } catch (_) {}
+          }
+          if (nextSearch) {
+            initStockfish();
+            if (!stockfish && nextSearch) {
+              const pending = nextSearch;
+              nextSearch = null;
+              pending.resolve({ ...EMPTY_SEARCH_RESULT });
+            }
+          }
+        }
+      }, 2500);
+
+      const moves = buildMovesResult(null);
+      const ponderMove = moves[0]?.ponder || null;
+      finishCurrentSearch({
+        cancelled: false,
+        moves,
+        ponderMove,
+        bestMove: moves[0]?.move || null,
+        bestScore: moves[0]?.score || null
+      });
+    }
+  }, 800);
+}
 
 function startSearch(fen, options, resolve) {
   if (!stockfish || !isReady) {
@@ -236,21 +331,7 @@ function startSearch(fen, options, resolve) {
       if (stockfish) {
         stockfish.postMessage("stop");
       }
-
-      // Аварийный сброс, если воркер не ответил на stop за 800мс
-      searchState.emergencyTimer = setTimeout(() => {
-        if (currentSearch === searchState) {
-          const moves = buildMovesResult(null);
-          const ponderMove = candidates[0]?.ponder || null;
-          finishCurrentSearch({
-            cancelled: false,
-            moves,
-            ponderMove,
-            bestMove: moves[0]?.move || null,
-            bestScore: moves[0]?.score || null
-          });
-        }
-      }, 800);
+      scheduleEmergencyReset(searchState);
     }
   }, waitLimit);
 
@@ -283,8 +364,8 @@ function finishCurrentSearch(result) {
     isSearching = false;
   }
 
-  // Запускаем самую свежую позицию из очереди, если она ждёт и движок готов
-  if (nextSearch && stockfish && isReady) {
+  // Запускаем самую свежую позицию из очереди, если она ждёт и движок свободен от старых хвостов
+  if (nextSearch && stockfish && isReady && staleBestmovesPending === 0) {
     const next = nextSearch;
     nextSearch = null;
     startSearch(next.fen, next.options, next.resolve);
@@ -300,7 +381,7 @@ function calculateMove(fen, options = {}) {
       return;
     }
 
-    if (!isReady) {
+    if (!isReady || staleBestmovesPending > 0) {
       if (nextSearch) {
         nextSearch.resolve({ ...CANCELLED_SEARCH_RESULT });
       }
@@ -320,6 +401,7 @@ function calculateMove(fen, options = {}) {
         currentSearch.stopSent = true;
         stockfish.postMessage("stop");
       }
+      scheduleEmergencyReset(currentSearch);
     }
 
     if (nextSearch) {
@@ -331,13 +413,17 @@ function calculateMove(fen, options = {}) {
 
 // Связь через sendMessage
 extApi.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (!request || typeof request !== "object") return false;
+
   if (request.type === "ANALYZE_POSITION") {
     calculateMove(request.fen, {
       depth: request.depth,
       movetime: request.movetime,
       multiPV: request.multiPV
     }).then((res) => {
-      sendResponse(res);
+      try {
+        sendResponse(res);
+      } catch (_) {}
     });
     return true;
   }
@@ -346,11 +432,13 @@ extApi.runtime.onMessage.addListener((request, sender, sendResponse) => {
     const pv = Math.max(1, Math.min(5, request.multiPV || (IS_MOBILE_BUILD ? 1 : 3)));
     desiredMultiPV = pv;
     initStockfish();
-    if (stockfish && isReady && !isSearching && pv !== currentMultiPV) {
+    if (stockfish && isReady && !isSearching && staleBestmovesPending === 0 && pv !== currentMultiPV) {
       currentMultiPV = pv;
       stockfish.postMessage(`setoption name MultiPV value ${currentMultiPV}`);
     }
-    sendResponse({ ok: true, multiPV: pv });
+    try {
+      sendResponse({ ok: true, multiPV: pv });
+    } catch (_) {}
     return false;
   }
 });

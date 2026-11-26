@@ -43,7 +43,7 @@ console.log('📄 [Build PC] Обработка manifest.json...');
 const manifestRaw = fs.readFileSync(path.join(ROOT_DIR, 'manifest.json'), 'utf8');
 const manifest = JSON.parse(manifestRaw);
 
-manifest.version = '2.4';
+manifest.version = manifest.version || '2.4';
 manifest.icons = {
   '48': 'icons/pawn.svg',
   '96': 'icons/pawn.svg'
@@ -81,7 +81,7 @@ const cssRaw = fs.readFileSync(path.join(ROOT_DIR, 'content', 'overlay.css'), 'u
 const cssMin = cssRaw
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .replace(/\s+/g, ' ')
-  .replace(/\s*([{}:;,>+~])\s*/g, '$1')
+  .replace(/\s*([{}:;,>~])\s*/g, '$1')
   .replace(/;}/g, '}')
   .trim();
 fs.writeFileSync(path.join(DIST_DIR, 'content', 'overlay.css'), cssMin, 'utf8');
