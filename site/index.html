@@ -5,353 +5,385 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title data-i18n="pageTitle">Chess Assistant — Умный шахматный ассистент (Stockfish 19)</title>
   <meta name="description" content="Мощное расширение для анализа шахматных партий в реальном времени на Chess.com и Lichess.org. Поддержка ПК и смартфонов.">
+  <meta name="theme-color" content="#000000">
   <link rel="icon" type="image/svg+xml" href="pawn.svg">
-  <link rel="stylesheet" href="style.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <!-- Фоновые неоновые эффекты -->
-  <div class="glow-bg glow-1"></div>
-  <div class="glow-bg glow-2"></div>
-  <div class="glow-bg glow-3"></div>
 
-  <!-- Навигация -->
-  <header class="site-header">
-    <div class="container header-container">
-      <div class="logo">
-        <img src="pawn.svg" alt="Chess Assistant Logo" class="logo-icon">
-        <span class="logo-text">Chess<span class="gradient-text">Assistant</span></span>
-        <span class="version-tag">v2.4</span>
-      </div>
+  <!-- ============ HEADER ============ -->
+  <header class="site-header" id="site-header">
+    <div class="container header-inner">
+      <a href="#" class="logo" aria-label="Chess Assistant">
+        <img src="pawn.svg" alt="" class="logo-icon">
+        <span class="logo-text">Chess Assistant</span>
+        <span class="logo-version">v2.4</span>
+      </a>
+
       <nav class="nav-links">
         <a href="#features" data-i18n="navFeatures">Возможности</a>
         <a href="#browsers" data-i18n="navBrowsers">Браузеры</a>
         <a href="#install" data-i18n="navInstall">Установка</a>
-        <a href="https://github.com/uspokoysa1007/chess-assistant" target="_blank" rel="noopener noreferrer" class="github-nav-btn">
-          <svg class="nav-icon" viewBox="0 0 24 24"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" fill="currentColor"/></svg>
+        <a href="https://t.me/chessassistants" target="_blank" rel="noopener noreferrer">Telegram</a>
+      </nav>
+
+      <div class="header-actions">
+        <div class="lang-toggle" role="group" aria-label="Language">
+          <button id="btn-lang-ru" class="lang-btn active">RU</button>
+          <button id="btn-lang-en" class="lang-btn">EN</button>
+        </div>
+        <a href="https://github.com/uspokoysa1007/chess-assistant" target="_blank" rel="noopener noreferrer" class="btn btn-ghost btn-xs hide-sm">
+          <svg class="icon" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
           GitHub
         </a>
-        <a href="https://t.me/chessassistants" target="_blank" rel="noopener noreferrer" class="tg-nav-btn">
-          <svg class="tg-icon-small" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69a.2.2 0 0 0-.05-.18c-.06-.05-.14-.03-.21-.02-.09.02-1.49.95-4.22 2.79-.4.27-.76.41-1.08.4-.36-.01-1.04-.2-1.55-.37-.63-.2-1.12-.31-1.08-.66.02-.18.27-.36.74-.55 2.92-1.27 4.86-2.11 5.83-2.51 2.78-1.16 3.35-1.36 3.73-1.36.08 0 .27.02.39.12.1.08.13.19.14.27-.01.06.01.24 0 .38z"/></svg>
-          Telegram
-        </a>
-      </nav>
-      <div class="lang-toggle">
-        <button id="btn-lang-ru" class="lang-btn active">RU</button>
-        <button id="btn-lang-en" class="lang-btn">EN</button>
+        <a href="#install" class="btn btn-primary btn-xs" data-i18n="navDownload">Скачать</a>
       </div>
     </div>
   </header>
 
-  <!-- Hero Секция -->
-  <section class="hero-section">
-    <div class="container hero-container">
-      <div class="hero-badge">
-        <span class="pulse-dot"></span>
-        <span data-i18n="heroBadge">Stockfish 19 WASM • Версия 2.4 Релиз</span>
-      </div>
-      <h1 class="hero-title">
-        <span data-i18n="heroTitle1">Побеждай уверенно.</span><br>
-        <span class="gradient-text" data-i18n="heroTitle2">Умный шахматный ассистент</span>
-      </h1>
-      <p class="hero-subtitle" data-i18n="heroSubtitle">
-        Визуальные стрелки лучших ходов, расчёт глубоких премувов и точная шкала преимущества в реальном времени на Chess.com и Lichess.org.
-      </p>
+  <main>
+    <!-- ============ HERO ============ -->
+    <section class="hero">
+      <div class="hero-grid" aria-hidden="true"></div>
 
-      <div class="hero-friend-tag">
-        <span class="friend-tag-icon">💜</span>
-        <span class="friend-tag-text" data-i18n="heroFriendTag">your free and opensource friend ^-^</span>
-      </div>
-
-      <div class="hero-cta-group">
-        <a href="https://github.com/uspokoysa1007/chess-assistant/releases/latest/download/chess-assistant.xpi" class="btn btn-primary">
-          <svg class="btn-icon" viewBox="0 0 24 24"><path d="M4 6h16v10H4z M2 18h20v2H2z" fill="currentColor"/></svg>
-          <div class="btn-text-wrap">
-            <span class="btn-main-text" data-i18n="downloadPcBtn">Скачать для ПК</span>
-            <span class="btn-sub-text">Stockfish 19 NNUE (~4050 ELO • 75 MB)</span>
-          </div>
+      <div class="container hero-inner">
+        <a href="https://github.com/uspokoysa1007/chess-assistant/releases" target="_blank" rel="noopener noreferrer" class="announce reveal">
+          <span class="announce-dot"></span>
+          <span data-i18n="heroBadge">Stockfish 19 WASM • Версия 2.4 Релиз</span>
+          <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </a>
 
-        <a href="downloads/chess-assistant_phone.xpi" download="chess-assistant_phone.xpi" class="btn btn-secondary">
-          <svg class="btn-icon" viewBox="0 0 24 24"><path d="M17 1.01L7 1c-1.1 0-2 .9-2 2v18c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V3c0-1.1-.9-1.99-2-1.99zM17 19H7V5h10v14z" fill="currentColor"/></svg>
-          <div class="btn-text-wrap">
-            <span class="btn-main-text" data-i18n="downloadPhoneBtn">Скачать для Телефона</span>
-            <span class="btn-sub-text">WASM Lite (~3650 ELO • 1.2 MB)</span>
-          </div>
-        </a>
+        <h1 class="hero-title reveal">
+          <span data-i18n="heroTitle1">Побеждай уверенно.</span><br>
+          <span class="hero-title-dim" data-i18n="heroTitle2">Умный шахматный ассистент</span>
+        </h1>
 
-        <a href="https://t.me/chessassistants" target="_blank" rel="noopener noreferrer" class="btn btn-tg">
-          <svg class="btn-icon" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69a.2.2 0 0 0-.05-.18c-.06-.05-.14-.03-.21-.02-.09.02-1.49.95-4.22 2.79-.4.27-.76.41-1.08.4-.36-.01-1.04-.2-1.55-.37-.63-.2-1.12-.31-1.08-.66.02-.18.27-.36.74-.55 2.92-1.27 4.86-2.11 5.83-2.51 2.78-1.16 3.35-1.36 3.73-1.36.08 0 .27.02.39.12.1.08.13.19.14.27-.01.06.01.24 0 .38z" fill="currentColor"/></svg>
-          <div class="btn-text-wrap">
-            <span class="btn-main-text" data-i18n="tgChannelBtn">Telegram Канал</span>
-            <span class="btn-sub-text">@chessassistants</span>
-          </div>
-        </a>
+        <p class="hero-subtitle reveal" data-i18n="heroSubtitle">
+          Визуальные стрелки лучших ходов, расчёт глубоких премувов и точная шкала преимущества в реальном времени на Chess.com и Lichess.org.
+        </p>
 
-        <a href="https://github.com/uspokoysa1007/chess-assistant" target="_blank" rel="noopener noreferrer" class="btn btn-github">
-          <svg class="btn-icon" viewBox="0 0 24 24"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" fill="currentColor"/></svg>
-          <div class="btn-text-wrap">
-            <span class="btn-main-text" data-i18n="githubBtn">Исходный код</span>
-            <span class="btn-sub-text">GitHub (Open Source)</span>
-          </div>
-        </a>
-      </div>
-
-      <!-- Макет интерфейса виджета -->
-      <div class="hero-preview-wrapper">
-        <div class="hero-preview-card">
-          <div class="preview-header">
-            <div class="preview-dots"><span></span><span></span><span></span></div>
-            <div class="preview-url">chess.com / lichess.org</div>
-            <div class="preview-badge">⚡ Stockfish 19 Active</div>
-          </div>
-          <div class="preview-body">
-            <div class="preview-board-mock">
-              <img src="board-preview.svg" alt="Chess Assistant Live Board" class="preview-board-img">
-            </div>
-            <div class="preview-widget-mock">
-              <div class="mock-widget-head">
-                <span>♟️ Stockfish 19</span>
-                <span class="mock-badge">🔥 4050 ELO</span>
-                <span class="mock-gear">⚙️</span>
-              </div>
-              <div class="mock-eval-line">
-                <span data-i18n="mockEvalLabel">📊 Оценка:</span>
-                <div class="mock-eval-bar"><div class="mock-eval-fill"></div></div>
-                <span class="mock-score">+0.4</span>
-              </div>
-              <div class="mock-status" data-i18n="mockStatus">🎯 Преимущество белых (в твою пользу! 🎉)</div>
-              <div class="mock-buttons">
-                <span class="mock-pill active" data-i18n="mockBullet">⚡ Пуля (150мс)</span>
-                <span class="mock-pill" data-i18n="mockBlitz">🎯 Блиц</span>
-                <span class="mock-pill" data-i18n="mockRapid">🧠 Рапид</span>
-              </div>
-              <div class="mock-log" data-i18n="mockLog">⬛ 1-й: D2 ➔ D4 [+0.4 • в твою пользу]<br>◽ 2-й: F1 ➔ E1 [+0.3 • в твою пользу]<br>⬜ 3-й: A2 ➔ A4 [+0.2 • в твою пользу]</div>
-            </div>
-          </div>
+        <div class="hero-cta reveal">
+          <a href="https://github.com/uspokoysa1007/chess-assistant/releases/latest/download/chess-assistant.xpi" class="btn btn-primary btn-lg">
+            <img src="pawn.svg" alt="" class="btn-pawn">
+            <span data-i18n="downloadPcBtn">Скачать для ПК</span>
+          </a>
+          <a href="downloads/chess-assistant_phone.xpi" download="chess-assistant_phone.xpi" class="btn btn-secondary btn-lg">
+            <span data-i18n="downloadPhoneBtn">Скачать для Телефона</span>
+          </a>
         </div>
-      </div>
-    </div>
-  </section>
 
-  <!-- Секция: Поддерживаемые браузеры -->
-  <section id="browsers" class="section">
-    <div class="container">
-      <div class="section-header">
-        <h2 class="section-title" data-i18n="browsersTitle">Под какие браузеры подходит?</h2>
-        <p class="section-desc" data-i18n="browsersSubtitle">
-          Плагин разработан в формате открытого стандарта расширений <strong>.xpi</strong>, что гарантирует максимальную производительность движка WebAssembly и отсутствие ограничений.
+        <p class="hero-meta reveal">
+          <span>Stockfish 19 NNUE · 75 MB</span>
+          <span class="sep">/</span>
+          <span>WASM Lite · 1.2 MB</span>
+          <span class="sep">/</span>
+          <span class="friend" data-i18n="heroFriendTag">your free and opensource friend ^-^</span>
         </p>
       </div>
 
-      <div class="browsers-grid">
-        <div class="browser-card featured">
-          <div class="browser-badge" data-i18n="recommendedBadge">⭐ Идеальный выбор</div>
-          <div class="browser-icon-wrap">🦊</div>
-          <h3 class="browser-name">Waterfox</h3>
-          <p class="browser-platform">Windows • macOS • Linux • Android</p>
-          <p class="browser-info" data-i18n="waterfoxDesc">
-            Лучший браузер для шахматного ассистента! Полная свобода установки сторонних дополнений из файлов, сверхбыстрый движок и поддержка как на ПК, так и на смартфоне.
+      <!-- Призма-свечение + превью -->
+      <div class="container preview-wrap reveal">
+        <div class="prism" aria-hidden="true"></div>
+
+        <div class="preview-window">
+          <div class="preview-bar">
+            <div class="preview-dots"><span></span><span></span><span></span></div>
+            <div class="preview-url">
+              <svg class="icon icon-sm" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+              chess.com / lichess.org
+            </div>
+            <div class="preview-status"><span class="status-dot"></span>Stockfish 19</div>
+          </div>
+
+          <div class="preview-body">
+            <div class="preview-board">
+              <img src="board-preview.svg" alt="Chess Assistant Live Board">
+            </div>
+
+            <div class="widget">
+              <div class="widget-head">
+                <span class="widget-title">♟ Stockfish 19</span>
+                <span class="widget-chip">4050 ELO</span>
+              </div>
+
+              <div class="widget-row">
+                <span class="widget-label" data-i18n="mockEvalLabel">📊 Оценка:</span>
+                <div class="eval-bar"><div class="eval-fill"></div></div>
+                <span class="eval-score">+0.4</span>
+              </div>
+
+              <div class="widget-status" data-i18n="mockStatus">🎯 Преимущество белых (в твою пользу! 🎉)</div>
+
+              <div class="widget-pills">
+                <span class="pill active" data-i18n="mockBullet">⚡ Пуля (150мс)</span>
+                <span class="pill" data-i18n="mockBlitz">🎯 Блиц</span>
+                <span class="pill" data-i18n="mockRapid">🧠 Рапид</span>
+              </div>
+
+              <div class="widget-log" data-i18n="mockLog">⬛ 1-й: D2 ➔ D4 [+0.4 • в твою пользу]<br>◽ 2-й: F1 ➔ E1 [+0.3 • в твою пользу]<br>⬜ 3-й: A2 ➔ A4 [+0.2 • в твою пользу]</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Полоса цифр (как логотипы клиентов у Vercel) -->
+      <div class="container">
+        <div class="stats reveal">
+          <div class="stat">
+            <div class="stat-value">~4050</div>
+            <div class="stat-label" data-i18n="stat1">ELO на ПК</div>
+          </div>
+          <div class="stat">
+            <div class="stat-value">1.2 MB</div>
+            <div class="stat-label" data-i18n="stat2">мобильная версия</div>
+          </div>
+          <div class="stat">
+            <div class="stat-value">26</div>
+            <div class="stat-label" data-i18n="stat3">ходов глубины</div>
+          </div>
+          <div class="stat">
+            <div class="stat-value">0 ₽</div>
+            <div class="stat-label" data-i18n="stat4">бесплатно навсегда</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ FEATURES ============ -->
+    <section id="features" class="section">
+      <div class="container">
+        <div class="section-head reveal">
+          <span class="eyebrow" data-i18n="featuresEyebrow">Возможности</span>
+          <h2 class="section-title" data-i18n="featuresTitle">Возможности и преимущества</h2>
+          <p class="section-desc" data-i18n="featuresSubtitle">Всё для максимального комфорта, глубокого анализа и побед.</p>
+        </div>
+
+        <div class="bento reveal">
+          <i class="plus plus-tl"></i><i class="plus plus-tr"></i><i class="plus plus-bl"></i><i class="plus plus-br"></i>
+
+          <article class="cell">
+            <div class="cell-icon"><svg viewBox="0 0 24 24"><path d="M7 17 17 7M8 7h9v9"/></svg></div>
+            <h3 data-i18n="feat1Title">Мульти-стрелки ходов</h3>
+            <p data-i18n="feat1Desc">Показ лучшего хода (чёрный), второго (серый) и третьего (белый), либо режим 5 стрелок с бейджами оценки позиции.</p>
+          </article>
+
+          <article class="cell">
+            <div class="cell-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div>
+            <h3 data-i18n="feat2Title">Умный расчёт премувов</h3>
+            <p data-i18n="feat2Desc">Пока соперник думает над своим ходом, движок уже рассчитывает твой ответный ход и моментально показывает зелёную стрелку премува.</p>
+          </article>
+
+          <article class="cell">
+            <div class="cell-icon"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M18 17V9M13 17V5M8 17v-3"/></svg></div>
+            <h3 data-i18n="feat3Title">Шкала преимущества (Eval Bar)</h3>
+            <p data-i18n="feat3Desc">Точный процент шансов на победу в режиме реального времени, пересчёт преимущества в пешечном эквиваленте или количестве ходов до мата.</p>
+          </article>
+
+          <article class="cell">
+            <div class="cell-icon"><svg viewBox="0 0 24 24"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg></div>
+            <h3 data-i18n="feat4Title">4 режима скорости</h3>
+            <p data-i18n="feat4Desc">От ультра-быстрой Пули (50–150 мс) до глубокого позиционного анализа в Рапиде и Ультра-режиме (до 26 ходов глубины).</p>
+          </article>
+
+          <article class="cell">
+            <div class="cell-icon"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>
+            <h3 data-i18n="feat5Title">Защита от пропадания стрелок</h3>
+            <p data-i18n="feat5Desc">Стрелки не исчезают, когда ты берёшь фигуру в руку и перетаскиваешь её по доске. Ты всегда видишь, куда ставить фигуру.</p>
+          </article>
+
+          <article class="cell">
+            <div class="cell-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg></div>
+            <h3 data-i18n="feat6Title">Русский и Английский (RU/EN)</h3>
+            <p data-i18n="feat6Desc">Мгновенный выбор языка интерфейса в настройках виджета. Автоматическое определение языка браузера.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ BROWSERS ============ -->
+    <section id="browsers" class="section">
+      <div class="container">
+        <div class="section-head reveal">
+          <span class="eyebrow" data-i18n="browsersEyebrow">Совместимость</span>
+          <h2 class="section-title" data-i18n="browsersTitle">Под какие браузеры подходит?</h2>
+          <p class="section-desc" data-i18n="browsersSubtitle">
+            Плагин разработан в формате открытого стандарта расширений <strong>.xpi</strong>, что гарантирует максимальную производительность движка WebAssembly и отсутствие ограничений.
           </p>
-          <a href="https://www.waterfox.net/" target="_blank" rel="noopener noreferrer" class="browser-link">waterfox.net ↗</a>
         </div>
 
-        <div class="browser-card">
-          <div class="browser-icon-wrap">🔥</div>
-          <h3 class="browser-name">Firefox / Nightly</h3>
-          <p class="browser-platform">Windows • macOS • Linux • Android</p>
-          <p class="browser-info" data-i18n="firefoxDesc">
-            Классический браузер с мощным WebAssembly JIT-компилятором. На ПК поддерживается в Firefox Developer Edition / Nightly / ESR (с отключённой проверкой подписи), на Android — в Firefox Nightly или Waterfox.
-          </p>
-          <a href="https://www.mozilla.org/firefox/" target="_blank" rel="noopener noreferrer" class="browser-link">mozilla.org ↗</a>
+        <div class="cards-3 reveal">
+          <a href="https://www.waterfox.net/" target="_blank" rel="noopener noreferrer" class="card card-featured">
+            <span class="card-badge" data-i18n="recommendedBadge">Идеальный выбор</span>
+            <div class="card-emoji">🦊</div>
+            <h3>Waterfox</h3>
+            <p class="card-platform">Windows · macOS · Linux · Android</p>
+            <p class="card-text" data-i18n="waterfoxDesc">Лучший браузер для шахматного ассистента! Полная свобода установки сторонних дополнений из файлов, сверхбыстрый движок и поддержка как на ПК, так и на смартфоне.</p>
+            <span class="card-link">waterfox.net <span class="arrow">↗</span></span>
+          </a>
+
+          <a href="https://www.mozilla.org/firefox/" target="_blank" rel="noopener noreferrer" class="card">
+            <div class="card-emoji">🔥</div>
+            <h3>Firefox / Nightly</h3>
+            <p class="card-platform">Windows · macOS · Linux · Android</p>
+            <p class="card-text" data-i18n="firefoxDesc">Классический браузер с мощным WebAssembly JIT-компилятором. На ПК поддерживается в Firefox Developer Edition / Nightly / ESR (с отключённой проверкой подписи), на Android — в Firefox Nightly или Waterfox.</p>
+            <span class="card-link">mozilla.org <span class="arrow">↗</span></span>
+          </a>
+
+          <a href="https://librewolf.net/" target="_blank" rel="noopener noreferrer" class="card">
+            <div class="card-emoji">🐺</div>
+            <h3>LibreWolf</h3>
+            <p class="card-platform">Windows · macOS · Linux</p>
+            <p class="card-text" data-i18n="librewolfDesc">Ориентированный на приватность браузер на базе Gecko. Отлично подходит для запуска плагина на ПК без лишней слежки и телеметрии.</p>
+            <span class="card-link">librewolf.net <span class="arrow">↗</span></span>
+          </a>
         </div>
 
-        <div class="browser-card">
-          <div class="browser-icon-wrap">🐺</div>
-          <h3 class="browser-name">LibreWolf</h3>
-          <p class="browser-platform">Windows • macOS • Linux</p>
-          <p class="browser-info" data-i18n="librewolfDesc">
-            Ориентированный на приватность браузер на базе Gecko. Отлично подходит для запуска плагина на ПК без лишней слежки и телеметрии.
-          </p>
-          <a href="https://librewolf.net/" target="_blank" rel="noopener noreferrer" class="browser-link">librewolf.net ↗</a>
-        </div>
-      </div>
-
-      <div class="browser-note-box">
-        <div class="note-icon">💡</div>
-        <div class="note-text" data-i18n="chromeNote">
-          <strong>Почему не Google Chrome / Edge / Opera?</strong> Chromium-браузеры заблокировали удобный формат дополнений <code>.xpi</code> и искусственно ограничивают производительность WebAssembly. Браузеры на базе Gecko (Waterfox / Firefox) работают на 40% быстрее и не блокируют работу шахматных нейросетей!
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- Секция: Возможности -->
-  <section id="features" class="section dark-section">
-    <div class="container">
-      <div class="section-header">
-        <h2 class="section-title" data-i18n="featuresTitle">Возможности и преимущества</h2>
-        <p class="section-desc" data-i18n="featuresSubtitle">Всё для максимального комфорта, глубокого анализа и побед.</p>
-      </div>
-
-      <div class="features-grid">
-        <div class="feature-card">
-          <div class="feature-icon">🏹</div>
-          <h3 data-i18n="feat1Title">Мульти-стрелки ходов</h3>
-          <p data-i18n="feat1Desc">Показ лучшего хода (чёрный), второго (серый) и третьего (белый), либо режим 5 стрелок с бейджами оценки позиции.</p>
-        </div>
-
-        <div class="feature-card">
-          <div class="feature-icon">🟢</div>
-          <h3 data-i18n="feat2Title">Умный расчёт премувов</h3>
-          <p data-i18n="feat2Desc">Пока соперник думает над своим ходом, движок уже рассчитывает твой ответный ход и моментально показывает зелёную стрелку премува.</p>
-        </div>
-
-        <div class="feature-card">
-          <div class="feature-icon">📊</div>
-          <h3 data-i18n="feat3Title">Шкала преимущества (Eval Bar)</h3>
-          <p data-i18n="feat3Desc">Точный процент шансов на победу в режиме реального времени, пересчёт преимущества в пешечном эквиваленте или количестве ходов до мата.</p>
-        </div>
-
-        <div class="feature-card">
-          <div class="feature-icon">⚡</div>
-          <h3 data-i18n="feat4Title">4 режима скорости</h3>
-          <p data-i18n="feat4Desc">От ультра-быстрой Пули (50–150 мс) до глубокого позиционного анализа в Рапиде и Ультра-режиме (до 26 ходов глубины).</p>
-        </div>
-
-        <div class="feature-card">
-          <div class="feature-icon">🛡️</div>
-          <h3 data-i18n="feat5Title">Защита от пропадания стрелок</h3>
-          <p data-i18n="feat5Desc">Стрелки не исчезают, когда ты берёшь фигуру в руку и перетаскиваешь её по доске. Ты всегда видишь, куда ставить фигуру.</p>
-        </div>
-
-        <div class="feature-card">
-          <div class="feature-icon">🌐</div>
-          <h3 data-i18n="feat6Title">Русский и Английский (RU/EN)</h3>
-          <p data-i18n="feat6Desc">Мгновенный выбор языка интерфейса в настройках виджета. Автоматическое определение языка браузера.</p>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- Секция: Пошаговая установка -->
-  <section id="install" class="section">
-    <div class="container">
-      <div class="section-header">
-        <h2 class="section-title" data-i18n="installTitle">Как установить плагин</h2>
-        <p class="section-desc" data-i18n="installSubtitle">Простая установка в три шага без сторонних магазинов расширений.</p>
-      </div>
-
-      <!-- Переключатель вкладок ПК / Телефон -->
-      <div class="install-tabs">
-        <button class="tab-btn active" data-tab="tab-pc" data-i18n="tabPcBtn">💻 Компьютер (Windows / Mac / Linux)</button>
-        <button class="tab-btn" data-tab="tab-phone" data-i18n="tabPhoneBtn">📱 Смартфон (Android)</button>
-      </div>
-
-      <!-- Вкладка ПК -->
-      <div id="tab-pc" class="tab-content active">
-        <div class="steps-grid">
-          <div class="step-card">
-            <div class="step-number">1</div>
-            <h3 data-i18n="stepPc1Title">Скачай файл расширения</h3>
-            <p data-i18n="stepPc1Desc">Скачай файл <code>chess-assistant.xpi</code> по кнопке ниже:</p>
-            <a href="https://github.com/uspokoysa1007/chess-assistant/releases/latest/download/chess-assistant.xpi" class="btn btn-primary btn-sm" data-i18n="stepPcDownloadBtn">
-              📥 Скачать chess-assistant.xpi (75 МБ)
-            </a>
-          </div>
-
-          <div class="step-card">
-            <div class="step-number">2</div>
-            <h3 data-i18n="stepPc2Title">Открой управление дополнениями</h3>
-            <p data-i18n="stepPc2Desc">В браузере Waterfox или Firefox открой страницу дополнений (нажми комбинацию клавиш <code>Ctrl + Shift + A</code> или введи в адресную строку <code>about:addons</code>).</p>
-          </div>
-
-          <div class="step-card">
-            <div class="step-number">3</div>
-            <h3 data-i18n="stepPc3Title">Установи из файла</h3>
-            <p data-i18n="stepPc3Desc">Нажми на значок шестерёнки ⚙️ в правом верхнем углу ➔ выбери <strong>«Установить дополнение из файла…»</strong> (Install Add-on From File) и укажи скачанный <code>.xpi</code>. Готово!</p>
+        <div class="note reveal">
+          <svg class="icon note-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 16v-4M12 8h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          <div class="note-text" data-i18n="chromeNote">
+            <strong>Почему не Google Chrome / Edge / Opera?</strong> Chromium-браузеры заблокировали удобный формат дополнений <code>.xpi</code> и искусственно ограничивают производительность WebAssembly. Браузеры на базе Gecko (Waterfox / Firefox) работают на 40% быстрее и не блокируют работу шахматных нейросетей!
           </div>
         </div>
       </div>
+    </section>
 
-      <!-- Вкладка Телефон -->
-      <div id="tab-phone" class="tab-content">
-        <div class="steps-grid">
-          <div class="step-card">
-            <div class="step-number">1</div>
-            <h3 data-i18n="stepPh1Title">Установи браузер на смартфон</h3>
-            <p data-i18n="stepPh1Desc">Установи браузер <strong>Waterfox</strong> или <strong>Firefox Nightly</strong> из Google Play или официального сайта.</p>
-          </div>
+    <!-- ============ INSTALL ============ -->
+    <section id="install" class="section">
+      <div class="container">
+        <div class="section-head reveal">
+          <span class="eyebrow" data-i18n="installEyebrow">Установка</span>
+          <h2 class="section-title" data-i18n="installTitle">Как установить плагин</h2>
+          <p class="section-desc" data-i18n="installSubtitle">Простая установка в три шага без сторонних магазинов расширений.</p>
+        </div>
 
-          <div class="step-card">
-            <div class="step-number">2</div>
-            <h3 data-i18n="stepPh2Title">Скачай мобильную версию плагина</h3>
-            <p data-i18n="stepPh2Desc">Скачай ультра-лёгкий пакет <code>chess-assistant_phone.xpi</code> (всего 1.2 МБ):</p>
-            <a href="downloads/chess-assistant_phone.xpi" download="chess-assistant_phone.xpi" class="btn btn-secondary btn-sm" data-i18n="stepPhDownloadBtn">
-              📥 Скачать chess-assistant_phone.xpi (1.2 МБ)
-            </a>
-          </div>
+        <div class="tabs reveal" role="tablist">
+          <button class="tab-btn active" data-tab="tab-pc" data-i18n="tabPcBtn">Компьютер</button>
+          <button class="tab-btn" data-tab="tab-phone" data-i18n="tabPhoneBtn">Смартфон (Android)</button>
+        </div>
 
-          <div class="step-card">
-            <div class="step-number">3</div>
-            <h3 data-i18n="stepPh3Title">Установи дополнение в браузере</h3>
-            <p data-i18n="stepPh3Desc">В мобильном Waterfox нажми меню (три точки ☰) ➔ <strong>Дополнения</strong> ➔ значок шестерёнки ⚙️ ➔ <strong>«Установить дополнение из файла»</strong>. Выбери скачанный файл — и побеждай с телефона!</p>
-          </div>
+        <!-- ПК -->
+        <div id="tab-pc" class="tab-content active">
+          <ol class="steps">
+            <li class="step">
+              <span class="step-num">1</span>
+              <div class="step-body">
+                <h3 data-i18n="stepPc1Title">Скачай файл расширения</h3>
+                <p data-i18n="stepPc1Desc">Скачай файл <code>chess-assistant.xpi</code> по кнопке ниже:</p>
+                <a href="https://github.com/uspokoysa1007/chess-assistant/releases/latest/download/chess-assistant.xpi" class="btn btn-primary btn-sm" data-i18n="stepPcDownloadBtn">Скачать chess-assistant.xpi (75 МБ)</a>
+              </div>
+            </li>
+            <li class="step">
+              <span class="step-num">2</span>
+              <div class="step-body">
+                <h3 data-i18n="stepPc2Title">Открой управление дополнениями</h3>
+                <p data-i18n="stepPc2Desc">В браузере Waterfox или Firefox открой страницу дополнений (нажми комбинацию клавиш <code>Ctrl + Shift + A</code> или введи в адресную строку <code>about:addons</code>).</p>
+                <div class="terminal">
+                  <span class="terminal-prompt">›</span>
+                  <code class="terminal-code">about:addons</code>
+                  <button class="copy-btn" data-copy="about:addons" aria-label="Copy">
+                    <svg class="icon icon-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg>
+                    <svg class="icon icon-check" viewBox="0 0 24 24"><path d="M5 12l5 5L20 7"/></svg>
+                  </button>
+                </div>
+              </div>
+            </li>
+            <li class="step">
+              <span class="step-num">3</span>
+              <div class="step-body">
+                <h3 data-i18n="stepPc3Title">Установи из файла</h3>
+                <p data-i18n="stepPc3Desc">Нажми на значок шестерёнки ⚙️ в правом верхнем углу ➔ выбери <strong>«Установить дополнение из файла…»</strong> (Install Add-on From File) и укажи скачанный <code>.xpi</code>. Готово!</p>
+              </div>
+            </li>
+          </ol>
+        </div>
+
+        <!-- Телефон -->
+        <div id="tab-phone" class="tab-content">
+          <ol class="steps">
+            <li class="step">
+              <span class="step-num">1</span>
+              <div class="step-body">
+                <h3 data-i18n="stepPh1Title">Установи браузер на смартфон</h3>
+                <p data-i18n="stepPh1Desc">Установи браузер <strong>Waterfox</strong> или <strong>Firefox Nightly</strong> из Google Play или официального сайта.</p>
+              </div>
+            </li>
+            <li class="step">
+              <span class="step-num">2</span>
+              <div class="step-body">
+                <h3 data-i18n="stepPh2Title">Скачай мобильную версию плагина</h3>
+                <p data-i18n="stepPh2Desc">Скачай ультра-лёгкий пакет <code>chess-assistant_phone.xpi</code> (всего 1.2 МБ):</p>
+                <a href="downloads/chess-assistant_phone.xpi" download="chess-assistant_phone.xpi" class="btn btn-primary btn-sm" data-i18n="stepPhDownloadBtn">Скачать chess-assistant_phone.xpi (1.2 МБ)</a>
+              </div>
+            </li>
+            <li class="step">
+              <span class="step-num">3</span>
+              <div class="step-body">
+                <h3 data-i18n="stepPh3Title">Установи дополнение в браузере</h3>
+                <p data-i18n="stepPh3Desc">В мобильном Waterfox нажми меню (три точки ☰) ➔ <strong>Дополнения</strong> ➔ значок шестерёнки ⚙️ ➔ <strong>«Установить дополнение из файла»</strong>. Выбери скачанный файл — и побеждай с телефона!</p>
+              </div>
+            </li>
+          </ol>
         </div>
       </div>
-    </div>
-  </section>
+    </section>
 
-  <!-- Telegram Баннер -->
-  <section class="tg-banner-section">
-    <div class="container">
-      <div class="tg-banner-card">
-        <div class="tg-banner-content">
-          <div class="tg-banner-icon">
-            <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69a.2.2 0 0 0-.05-.18c-.06-.05-.14-.03-.21-.02-.09.02-1.49.95-4.22 2.79-.4.27-.76.41-1.08.4-.36-.01-1.04-.2-1.55-.37-.63-.2-1.12-.31-1.08-.66.02-.18.27-.36.74-.55 2.92-1.27 4.86-2.11 5.83-2.51 2.78-1.16 3.35-1.36 3.73-1.36.08 0 .27.02.39.12.1.08.13.19.14.27-.01.06.01.24 0 .38z" fill="currentColor"/></svg>
-          </div>
-          <div class="tg-banner-text">
+    <!-- ============ CTA ============ -->
+    <section class="cta">
+      <div class="container">
+        <div class="cta-box reveal">
+          <i class="plus plus-tl"></i><i class="plus plus-tr"></i><i class="plus plus-bl"></i><i class="plus plus-br"></i>
+          <div class="cta-text">
             <h2 data-i18n="tgBannerTitle">Официальный Telegram-канал</h2>
             <p data-i18n="tgBannerDesc">Свежие обновления движка, новые функции, настройки под блиц/пулю и общение игроков в нашем Telegram-сообществе!</p>
           </div>
+          <div class="cta-actions">
+            <a href="https://t.me/chessassistants" target="_blank" rel="noopener noreferrer" class="btn btn-primary btn-lg">
+              <span data-i18n="tgJoinBtn">Присоединиться к Telegram</span>
+            </a>
+            <a href="https://github.com/uspokoysa1007/chess-assistant" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-lg">
+              <span data-i18n="githubBtn">Исходный код</span>
+            </a>
+          </div>
         </div>
-        <a href="https://t.me/chessassistants" target="_blank" rel="noopener noreferrer" class="btn btn-tg-large">
-          <span data-i18n="tgJoinBtn">Присоединиться к Telegram</span> ➔
-        </a>
       </div>
-    </div>
-  </section>
+    </section>
+  </main>
 
-  <!-- Футер -->
+  <!-- ============ FOOTER ============ -->
   <footer class="site-footer">
-    <div class="container footer-container">
-      <div class="footer-left">
-        <div class="logo">
-          <img src="pawn.svg" alt="Logo" class="logo-icon">
-          <span>ChessAssistant</span>
-        </div>
+    <div class="container footer-inner">
+      <div class="footer-brand">
+        <a href="#" class="logo">
+          <img src="pawn.svg" alt="" class="logo-icon">
+          <span class="logo-text">Chess Assistant</span>
+        </a>
         <p class="footer-desc" data-i18n="footerDesc">Свободное и открытое расширение для анализа шахматных партий.</p>
-        <p class="footer-license">Distributed under <a href="https://www.gnu.org/licenses/gpl-3.0.html" target="_blank" rel="noopener noreferrer">GNU GPL v3.0</a>. Powered by Stockfish.</p>
+        <div class="footer-status">
+          <span class="status-dot"></span>
+          <span data-i18n="footerStatus">Все системы в норме</span>
+        </div>
       </div>
 
-      <div class="footer-links">
+      <div class="footer-cols">
         <div class="footer-col">
           <h4 data-i18n="footerColProject">Проект</h4>
           <a href="https://github.com/uspokoysa1007/chess-assistant" target="_blank" rel="noopener noreferrer">GitHub Repository</a>
-          <a href="https://github.com/uspokoysa1007/chess-assistant/releases" target="_blank" rel="noopener noreferrer">Releases & Changelog</a>
+          <a href="https://github.com/uspokoysa1007/chess-assistant/releases" target="_blank" rel="noopener noreferrer">Releases &amp; Changelog</a>
+          <a href="https://www.gnu.org/licenses/gpl-3.0.html" target="_blank" rel="noopener noreferrer">GNU GPL v3.0</a>
         </div>
         <div class="footer-col">
           <h4 data-i18n="footerColCommunity">Сообщество</h4>
-          <a href="https://t.me/chessassistants" target="_blank" rel="noopener noreferrer">Telegram: @chessassistants</a>
+          <a href="https://t.me/chessassistants" target="_blank" rel="noopener noreferrer">Telegram</a>
+          <a href="https://stockfishchess.org/" target="_blank" rel="noopener noreferrer">Stockfish</a>
         </div>
       </div>
     </div>
-    <div class="footer-bottom">
-      <div class="container">
-        <p>© 2026 Chess Assistant Team. Made with ❤️ for chess lovers.</p>
-      </div>
+    <div class="container footer-bottom">
+      <span>© 2026 Chess Assistant Team</span>
+      <span>Made with ♥ for chess lovers</span>
     </div>
   </footer>
 
