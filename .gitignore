@@ -24,7 +24,6 @@ chess-assistant_phone/
 
 # 🗜️ Большие архивы и скомпилированные бинарники (>50 МБ)
 stockfish-19-full.wasm
-*.xpi
 *.rar
 *.zip.bak
 
