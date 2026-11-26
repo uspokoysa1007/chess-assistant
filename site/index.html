@@ -71,7 +71,7 @@
             <span data-i18n="downloadPcBtn">Скачать для ПК</span>
           </a>
           <a href="downloads/chess-assistant_phone.xpi" download="chess-assistant_phone.xpi" class="btn btn-secondary btn-lg">
-            <span data-i18n="downloadPhoneBtn">Скачать для Телефона</span>
+            <span data-i18n="downloadPhoneBtn">Скачать для телефона</span>
           </a>
         </div>
 
@@ -145,7 +145,7 @@
             <div class="stat-label" data-i18n="stat3">ходов глубины</div>
           </div>
           <div class="stat">
-            <div class="stat-value">0 ₽</div>
+            <div class="stat-value" data-i18n="stat4Val">0 ₽</div>
             <div class="stat-label" data-i18n="stat4">бесплатно навсегда</div>
           </div>
         </div>
@@ -260,12 +260,12 @@
         </div>
 
         <div class="tabs reveal" role="tablist">
-          <button class="tab-btn active" data-tab="tab-pc" data-i18n="tabPcBtn">Компьютер</button>
-          <button class="tab-btn" data-tab="tab-phone" data-i18n="tabPhoneBtn">Смартфон (Android)</button>
+          <button class="tab-btn active" role="tab" aria-selected="true" aria-controls="tab-pc" data-tab="tab-pc" data-i18n="tabPcBtn">Компьютер</button>
+          <button class="tab-btn" role="tab" aria-selected="false" aria-controls="tab-phone" data-tab="tab-phone" data-i18n="tabPhoneBtn">Смартфон (Android)</button>
         </div>
 
         <!-- ПК -->
-        <div id="tab-pc" class="tab-content active">
+        <div id="tab-pc" class="tab-content active" role="tabpanel">
           <ol class="steps">
             <li class="step">
               <span class="step-num">1</span>
@@ -301,7 +301,7 @@
         </div>
 
         <!-- Телефон -->
-        <div id="tab-phone" class="tab-content">
+        <div id="tab-phone" class="tab-content" role="tabpanel">
           <ol class="steps">
             <li class="step">
               <span class="step-num">1</span>

@@ -75,15 +75,29 @@ delete manifest.web_accessible_resources;
 fs.writeFileSync(path.join(DIST_DIR, 'manifest.json'), escapeAndMinifyJson(manifest), 'utf8');
 console.log('✅ manifest.json сохранен в dist/');
 
+function minifyCss(css) {
+  const strings = [];
+  const protectedCss = css.replace(/(["'])(?:\\.|(?!\1)[^\\\r\n])*\1|\/\*[\s\S]*?\*\//g, (match, quote) => {
+    if (!quote) return '';
+    const idx = strings.length;
+    strings.push(match);
+    return `__CSS_STR_${idx}__`;
+  });
+
+  const minified = protectedCss
+    .replace(/\s+/g, ' ')
+    .replace(/\s*([{}>~;,])\s*/g, '$1')
+    .replace(/:\s+/g, ':')
+    .replace(/;}/g, '}')
+    .trim();
+
+  return minified.replace(/__CSS_STR_(\d+)__/g, (_, idx) => strings[Number(idx)]);
+}
+
 // 3. Минификация overlay.css
 console.log('🎨 [Build PC] Минификация overlay.css...');
 const cssRaw = fs.readFileSync(path.join(ROOT_DIR, 'content', 'overlay.css'), 'utf8');
-const cssMin = cssRaw
-  .replace(/\/\*[\s\S]*?\*\//g, '')
-  .replace(/\s+/g, ' ')
-  .replace(/\s*([{}:;,>~])\s*/g, '$1')
-  .replace(/;}/g, '}')
-  .trim();
+const cssMin = minifyCss(cssRaw);
 fs.writeFileSync(path.join(DIST_DIR, 'content', 'overlay.css'), cssMin, 'utf8');
 console.log(`✅ dist/content/overlay.css готов (${cssMin.length} байт)`);
 

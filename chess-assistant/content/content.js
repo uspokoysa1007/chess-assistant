@@ -33,6 +33,7 @@ let isPremovesEnabled = savedPremovesSetting !== null ? savedPremovesSetting ===
 let isMinimized = IS_MOBILE_BUILD;
 let isUserInteractingWithBoard = false;
 let debounceTimer = null;
+let followUpCheckTimer = null;
 let lastAnalyzedFEN = "";
 let lastBoardFlipped = null;
 let lastRenderedState = null;
@@ -351,6 +352,18 @@ let gameTracking = {
   blackRookH8Moved: false
 };
 let lastPlyCount = 0;
+let lastPieceCount = 0;
+let lastTrackedUrl = typeof location !== "undefined" ? location.href : "";
+
+function countGridPieces(grid) {
+  let count = 0;
+  for (let r = 0; r < 8; r++) {
+    for (let c = 0; c < 8; c++) {
+      if (grid[r] && grid[r][c]) count++;
+    }
+  }
+  return count;
+}
 
 function resetGameTracking() {
   gameTracking = {
@@ -362,6 +375,8 @@ function resetGameTracking() {
     blackRookH8Moved: false
   };
   lastPlyCount = 0;
+  lastPieceCount = 0;
+  lastTrackedUrl = typeof location !== "undefined" ? location.href : "";
 }
 
 function findFirstNonEmptySelector(selectors) {
@@ -424,55 +439,91 @@ const Adapters = {
     isInteracting(board) {
       return isUserInteractingWithBoard || this.isDragging(board) || this.isSelecting(board);
     },
-    detectTurn(board) {
-      const isFlipped = this.isBoardFlipped(board);
-
-      // 1. Проверяем часы с активным ходом на Chess.com
-      const blackClockRunning = document.querySelector(
-        ".clock-component.clock-black.clock-player-turn, .clock-component.clock-black.clock-running, .clock-black.clock-player-turn, .clock-black.clock-running, .player-component.black.player-turn, .player-tagline.black.turn"
-      );
-      if (blackClockRunning) return "b";
-
-      const whiteClockRunning = document.querySelector(
-        ".clock-component.clock-white.clock-player-turn, .clock-component.clock-white.clock-running, .clock-white.clock-player-turn, .clock-white.clock-running, .player-component.white.player-turn, .player-tagline.white.turn"
-      );
-      if (whiteClockRunning) return "w";
-
-      const turnClock = document.querySelector(".clock-component.clock-player-turn, .clock-player-turn, .player-component.player-turn");
-      if (turnClock) {
-        if (turnClock.classList.contains("clock-black") || turnClock.classList.contains("black")) return "b";
-        if (turnClock.classList.contains("clock-white") || turnClock.classList.contains("white")) return "w";
-        if (turnClock.classList.contains("clock-top")) return isFlipped ? "w" : "b";
-        if (turnClock.classList.contains("clock-bottom")) return isFlipped ? "b" : "w";
-      }
-
-      // 2. Список ходов по приоритету селекторов (без двойного подсчёта)
-      const moveNodes = findFirstNonEmptySelector(CHESSCOM_MOVE_SELECTORS);
-      if (moveNodes.length > 0) {
-        const selectedIdx = moveNodes.findIndex((n) => n.classList.contains("selected") || !!n.querySelector(".selected"));
-        const activePlyCount = selectedIdx !== -1 ? selectedIdx + 1 : moveNodes.length;
-        return activePlyCount % 2 === 1 ? "b" : "w";
-      }
-
-      // 3. Если часов и списка ходов нет: проверяем 2 подсветки последнего завершённого хода
-      if (board && !this.isInteracting(board)) {
-        const highlights = board.querySelectorAll(".highlight");
-        if (highlights.length === 2) {
-          for (const hl of highlights) {
-            const hlClasses = Array.from(hl.classList);
-            const sqClass = hlClasses.find((c) => /^square-[1-8]{2}$/.test(c));
-            if (sqClass) {
-              const piece = board.querySelector(`.piece.${sqClass}:not(.dragging)`) || board.querySelector(`.piece.${sqClass}`);
-              if (piece) {
-                const pieceClasses = Array.from(piece.classList);
-                const typeClass = pieceClasses.find((c) => /^[wb][pnbrqk]$/.test(c));
-                if (typeClass) {
-                  return typeClass[0] === "w" ? "b" : "w";
-                }
+    detectTurnFromHighlights(board) {
+      if (!board || this.isDragging(board)) return null;
+      const highlights = board.querySelectorAll(".highlight");
+      if (highlights.length === 2) {
+        for (const hl of highlights) {
+          const hlClasses = Array.from(hl.classList);
+          const sqClass = hlClasses.find((c) => /^square-[1-8]{2}$/.test(c));
+          if (sqClass) {
+            const piece = board.querySelector(`.piece.${sqClass}:not(.dragging)`) || board.querySelector(`.piece.${sqClass}`);
+            if (piece) {
+              const pieceClasses = Array.from(piece.classList);
+              const typeClass = pieceClasses.find((c) => /^[wb][pnbrqk]$/.test(c));
+              if (typeClass) {
+                return typeClass[0] === "w" ? "b" : "w";
               }
             }
           }
         }
+      }
+      return null;
+    },
+    detectTurnFromMoveList(moveNodes, selectedIdx) {
+      if (!moveNodes || moveNodes.length === 0) return "w";
+      const activeIdx = selectedIdx !== -1 ? selectedIdx : moveNodes.length - 1;
+      const activeNode = moveNodes[activeIdx];
+      if (activeNode) {
+        if (
+          activeNode.classList.contains("white") ||
+          activeNode.classList.contains("white-move") ||
+          activeNode.closest(".white-move")
+        ) {
+          return "b";
+        }
+        if (
+          activeNode.classList.contains("black") ||
+          activeNode.classList.contains("black-move") ||
+          activeNode.closest(".black-move")
+        ) {
+          return "w";
+        }
+        const rawPly = activeNode.getAttribute("data-ply");
+        if (rawPly !== null) {
+          const ply = parseInt(rawPly, 10);
+          if (!Number.isNaN(ply)) {
+            return ply % 2 === 1 ? "b" : "w";
+          }
+        }
+      }
+      const activePlyCount = activeIdx + 1;
+      return activePlyCount % 2 === 1 ? "b" : "w";
+    },
+    detectTurn(board) {
+      const isFlipped = this.isBoardFlipped(board);
+      const moveNodes = findFirstNonEmptySelector(CHESSCOM_MOVE_SELECTORS);
+      const selectedIdx = moveNodes.findIndex((n) => n.classList.contains("selected") || !!n.querySelector(".selected"));
+      const isViewingPast = selectedIdx !== -1 && selectedIdx + 1 < moveNodes.length;
+
+      // 1. Проверяем часы с активным ходом на Chess.com (если не смотрим историю партии)
+      if (!isViewingPast) {
+        const blackClockRunning = document.querySelector(
+          ".clock-component.clock-black.clock-player-turn, .clock-component.clock-black.clock-running, .clock-black.clock-player-turn, .clock-black.clock-running, .player-component.black.player-turn, .player-tagline.black.turn"
+        );
+        if (blackClockRunning) return "b";
+
+        const whiteClockRunning = document.querySelector(
+          ".clock-component.clock-white.clock-player-turn, .clock-component.clock-white.clock-running, .clock-white.clock-player-turn, .clock-white.clock-running, .player-component.white.player-turn, .player-tagline.white.turn"
+        );
+        if (whiteClockRunning) return "w";
+
+        const turnClock = document.querySelector(".clock-component.clock-player-turn, .clock-player-turn, .player-component.player-turn");
+        if (turnClock) {
+          if (turnClock.classList.contains("clock-black") || turnClock.classList.contains("black")) return "b";
+          if (turnClock.classList.contains("clock-white") || turnClock.classList.contains("white")) return "w";
+          if (turnClock.classList.contains("clock-top")) return isFlipped ? "w" : "b";
+          if (turnClock.classList.contains("clock-bottom")) return isFlipped ? "b" : "w";
+        }
+      }
+
+      // 2. Проверяем 2 подсветки последнего завершённого хода (задачи, история, партии без часов)
+      const hlTurn = this.detectTurnFromHighlights(board);
+      if (hlTurn) return hlTurn;
+
+      // 3. Список ходов по приоритету селекторов
+      if (moveNodes.length > 0) {
+        return this.detectTurnFromMoveList(moveNodes, selectedIdx);
       }
 
       return "w";
@@ -482,11 +533,19 @@ const Adapters = {
       const selectedIdx = moveNodes.findIndex((n) => n.classList.contains("selected") || !!n.querySelector(".selected"));
       const isViewingPast = selectedIdx !== -1 && selectedIdx + 1 < moveNodes.length;
       const activePlyCount = selectedIdx !== -1 ? selectedIdx + 1 : moveNodes.length;
+      const pieceCount = countGridPieces(grid);
+      const currentUrl = typeof location !== "undefined" ? location.href : "";
+      const urlChanged = Boolean(currentUrl && lastTrackedUrl && currentUrl !== lastTrackedUrl);
+      const piecesIncreased = lastPieceCount > 0 && pieceCount > lastPieceCount;
 
-      if (fenRanks === STANDARD_START_FEN_RANKS || activePlyCount < lastPlyCount || isViewingPast) {
+      if (fenRanks === STANDARD_START_FEN_RANKS || activePlyCount < lastPlyCount || isViewingPast || urlChanged || piecesIncreased) {
         resetGameTracking();
       }
       lastPlyCount = activePlyCount;
+      lastTrackedUrl = currentUrl;
+      if (!this.isDragging(board)) {
+        lastPieceCount = pieceCount;
+      }
 
       if (!this.isDragging(board)) {
         if (grid[0][4] !== "wk") gameTracking.whiteKingMoved = true;
@@ -640,49 +699,82 @@ const Adapters = {
     isInteracting(board) {
       return isUserInteractingWithBoard || this.isDragging(board) || this.isSelecting(board);
     },
-    detectTurn(board) {
-      const isFlipped = this.isBoardFlipped(board);
-
-      // 1. Проверяем часы по прямому цвету (не зависят от переворота доски)
-      if (document.querySelector(".rclock.white.running, .rclock-white.running, .clock-white.running")) {
-        return "w";
-      }
-      if (document.querySelector(".rclock.black.running, .rclock-black.running, .clock-black.running")) {
-        return "b";
-      }
-
-      // 2. Проверяем позиционные часы (зависят от переворота доски)
-      if (document.querySelector(".rclock-bottom.running")) {
-        return isFlipped ? "b" : "w";
-      }
-      if (document.querySelector(".rclock-top.running")) {
-        return isFlipped ? "w" : "b";
-      }
-
-      // 3. Список ходов (учитываем активный полуход при просмотре истории)
-      const moves = findFirstNonEmptySelector(LICHESS_MOVE_SELECTORS);
-      if (moves.length > 0) {
-        const activeIdx = moves.findIndex((n) => n.classList.contains("active"));
-        const activePlyCount = activeIdx !== -1 ? activeIdx + 1 : moves.length;
-        return activePlyCount % 2 === 1 ? "b" : "w";
-      }
-
-      if (!this.isInteracting(board)) {
-        const lastMoves = (board || document).querySelectorAll("square.last-move");
-        if (lastMoves.length === 2) {
-          for (const sq of lastMoves) {
-            const sqRect = sq.getBoundingClientRect();
-            const piece = Array.from((board || document).querySelectorAll("piece:not(.dragging):not(.fading)")).find((p) => {
-              const pr = p.getBoundingClientRect();
-              return Math.abs(pr.left - sqRect.left) < 6 && Math.abs(pr.top - sqRect.top) < 6;
-            });
-            if (piece) {
-              if (piece.classList.contains("white")) return "b";
-              if (piece.classList.contains("black")) return "w";
-            }
+    isAnimating(board) {
+      const b = board || this.getBoardElement();
+      return !!(b && b.querySelector("piece.anim"));
+    },
+    detectTurnFromHighlights(board) {
+      if (!board || this.isDragging(board) || this.isAnimating(board)) return null;
+      const lastMoves = board.querySelectorAll("square.last-move");
+      if (lastMoves.length === 2) {
+        const pieces = Array.from(board.querySelectorAll("piece:not(.dragging):not(.fading):not(.anim)"));
+        for (const sq of lastMoves) {
+          const sqRect = sq.getBoundingClientRect();
+          const piece = pieces.find((p) => {
+            const pr = p.getBoundingClientRect();
+            return Math.abs(pr.left - sqRect.left) < 6 && Math.abs(pr.top - sqRect.top) < 6;
+          });
+          if (piece) {
+            if (piece.classList.contains("white")) return "b";
+            if (piece.classList.contains("black")) return "w";
           }
         }
       }
+      return null;
+    },
+    detectTurnFromMoveList(moves, activeIdx) {
+      if (!moves || moves.length === 0) return "w";
+      const idx = activeIdx !== -1 ? activeIdx : moves.length - 1;
+      const node = moves[idx];
+      if (node) {
+        const rawPly = node.getAttribute("p");
+        if (rawPly !== null) {
+          const ply = parseInt(rawPly, 10);
+          if (!Number.isNaN(ply)) {
+            return ply % 2 === 1 ? "b" : "w";
+          }
+        }
+      }
+      const firstPrev = moves[0]?.previousElementSibling;
+      const startsWithBlackPlaceholder = Boolean(
+        firstPrev &&
+        !moves.includes(firstPrev) &&
+        (firstPrev.classList.contains("empty") || /^(?:\.{3}|…)$/.test((firstPrev.textContent || "").trim()))
+      );
+      const activePlyCount = idx + 1 + (startsWithBlackPlaceholder ? 1 : 0);
+      return activePlyCount % 2 === 1 ? "b" : "w";
+    },
+    detectTurn(board) {
+      const isFlipped = this.isBoardFlipped(board);
+      const moves = findFirstNonEmptySelector(LICHESS_MOVE_SELECTORS);
+      const activeIdx = moves.findIndex((n) => n.classList.contains("active"));
+      const isViewingPast = activeIdx !== -1 && activeIdx + 1 < moves.length;
+
+      // 1. Проверяем часы по прямому цвету и позиции (если не смотрим историю партии)
+      if (!isViewingPast) {
+        if (document.querySelector(".rclock.white.running, .rclock-white.running, .clock-white.running")) {
+          return "w";
+        }
+        if (document.querySelector(".rclock.black.running, .rclock-black.running, .clock-black.running")) {
+          return "b";
+        }
+        if (document.querySelector(".rclock-bottom.running")) {
+          return isFlipped ? "b" : "w";
+        }
+        if (document.querySelector(".rclock-top.running")) {
+          return isFlipped ? "w" : "b";
+        }
+      }
+
+      // 2. Подсветка последнего хода на доске (задачи, просмотр истории, без часов)
+      const hlTurn = this.detectTurnFromHighlights(board);
+      if (hlTurn) return hlTurn;
+
+      // 3. Список ходов (учитываем активный полуход и сдвиг при ходе чёрных)
+      if (moves.length > 0) {
+        return this.detectTurnFromMoveList(moves, activeIdx);
+      }
+
       return "w";
     },
     getCastlingAndEnPassant(board, grid, activeTurn = "w", fenRanks = "") {
@@ -690,11 +782,19 @@ const Adapters = {
       const activeIdx = moveNodes.findIndex((n) => n.classList.contains("active"));
       const isViewingPast = activeIdx !== -1 && activeIdx + 1 < moveNodes.length;
       const activePlyCount = activeIdx !== -1 ? activeIdx + 1 : moveNodes.length;
+      const pieceCount = countGridPieces(grid);
+      const currentUrl = typeof location !== "undefined" ? location.href : "";
+      const urlChanged = Boolean(currentUrl && lastTrackedUrl && currentUrl !== lastTrackedUrl);
+      const piecesIncreased = lastPieceCount > 0 && pieceCount > lastPieceCount;
 
-      if (fenRanks === STANDARD_START_FEN_RANKS || activePlyCount < lastPlyCount || isViewingPast) {
+      if (fenRanks === STANDARD_START_FEN_RANKS || activePlyCount < lastPlyCount || isViewingPast || urlChanged || piecesIncreased) {
         resetGameTracking();
       }
       lastPlyCount = activePlyCount;
+      lastTrackedUrl = currentUrl;
+      if (!this.isDragging(board)) {
+        lastPieceCount = pieceCount;
+      }
 
       if (!this.isDragging(board)) {
         if (grid[0][4] !== "K") gameTracking.whiteKingMoved = true;
@@ -775,6 +875,7 @@ const Adapters = {
     parseBoardToFEN(board) {
       const bRect = board.getBoundingClientRect();
       if (!bRect.width || !bRect.height) return "";
+      if (this.isAnimating(board)) return "";
       const sqW = bRect.width / 8;
       const sqH = bRect.height / 8;
       const isFlipped = this.isBoardFlipped(board);
@@ -858,6 +959,10 @@ function isInteractingWithBoard(board) {
   const adapter = getAdapter();
   if (adapter && adapter.isInteracting) return adapter.isInteracting(board || getBoardElement());
   return isDragging(board);
+}
+function isBoardAnimating(board) {
+  const adapter = getAdapter();
+  return adapter && adapter.isAnimating ? adapter.isAnimating(board || getBoardElement()) : false;
 }
 function detectTurn(board) {
   return getAdapter().detectTurn(board || getBoardElement());
@@ -1274,6 +1379,7 @@ function setPlatform(platform) {
   }
 
   ++currentRequestId;
+  clearTimeout(followUpCheckTimer);
   clearOverlay();
   lastRenderedState = null;
   lastAnalyzedFEN = "";
@@ -1297,6 +1403,7 @@ function setPlatform(platform) {
 function requestMovesFromBackground(fen, cfg = {}) {
   return new Promise((resolve) => {
     let resolved = false;
+    let timeoutId = null;
     const defaultPV = IS_MOBILE_BUILD
       ? (amateurModeEnabled ? 5 : 1)
       : (arrowMode === "multi5" ? 5 : (arrowMode === "multi1" ? 1 : 3));
@@ -1313,6 +1420,7 @@ function requestMovesFromBackground(fen, cfg = {}) {
       const hadRuntimeError = !!(extApi.runtime && extApi.runtime.lastError);
       if (!resolved) {
         resolved = true;
+        if (timeoutId) clearTimeout(timeoutId);
         if (res) {
           resolve(res);
         } else {
@@ -1332,7 +1440,7 @@ function requestMovesFromBackground(fen, cfg = {}) {
       ? Math.max(4500, cfg.movetime + 4000)
       : (cfg.depth ? Math.max(12000, cfg.depth * 800) : 15000);
     const timeoutWait = bgLimit + 800 + 2500;
-    setTimeout(() => {
+    timeoutId = setTimeout(() => {
       if (!resolved) {
         resolved = true;
         resolve({ cancelled: true, timedOut: true, moves: [], ponderMove: null, bestMove: null, bestScore: null });
@@ -1765,13 +1873,7 @@ function drawAllVisuals({ moves = [], premoveMove = null, activeTurn = "w", oppM
 
   // На мобильной версии всегда показываем 1 самую чёткую стрелку
   if (IS_MOBILE_BUILD) {
-    if (hasPremove) {
-      const pStart = getSquareBox(premoveMove.slice(0, 2), squareSize, dpr, isFlipped);
-      const pEnd = getSquareBox(premoveMove.slice(2, 4), squareSize, dpr, isFlipped);
-      drawSquareMarker(ctx, pStart, PREMOVE_COLOR, dpr);
-      drawSquareMarker(ctx, pEnd, PREMOVE_COLOR, dpr);
-      drawArrow(ctx, pStart, pEnd, PREMOVE_COLOR, dpr);
-    } else if (validMoves.length > 0) {
+    if (validMoves.length > 0) {
       const best = validMoves[0];
       const start = getSquareBox(best.move.slice(0, 2), squareSize, dpr, isFlipped);
       const end = getSquareBox(best.move.slice(2, 4), squareSize, dpr, isFlipped);
@@ -1781,6 +1883,12 @@ function drawAllVisuals({ moves = [], premoveMove = null, activeTurn = "w", oppM
       drawSquareMarker(ctx, end, arrowColor, dpr);
       drawArrow(ctx, start, end, arrowColor, dpr);
       drawBadge(ctx, end, best.score, arrowColor, dpr, "top-center", 0, activeTurn);
+    } else if (hasPremove) {
+      const pStart = getSquareBox(premoveMove.slice(0, 2), squareSize, dpr, isFlipped);
+      const pEnd = getSquareBox(premoveMove.slice(2, 4), squareSize, dpr, isFlipped);
+      drawSquareMarker(ctx, pStart, PREMOVE_COLOR, dpr);
+      drawSquareMarker(ctx, pEnd, PREMOVE_COLOR, dpr);
+      drawArrow(ctx, pStart, pEnd, PREMOVE_COLOR, dpr);
     }
     return;
   }
@@ -2059,6 +2167,19 @@ function handleBoardInteractionEnd() {
 // ==========================================
 // 5. Запрос лучших ходов и вывод
 // ==========================================
+function scheduleFollowUpCheck() {
+  clearTimeout(followUpCheckTimer);
+  followUpCheckTimer = setTimeout(() => {
+    if (!isAutoHintEnabled) return;
+    const b = getBoardElement();
+    if (!b || isInteractingWithBoard(b) || isBoardAnimating(b)) return;
+    const freshFen = parseBoardToFEN(b);
+    if (freshFen && freshFen !== lastAnalyzedFEN) {
+      requestBestMoves();
+    }
+  }, 350);
+}
+
 async function requestBestMoves() {
   const board = getBoardElement();
   const output = document.getElementById("chess-assistant-output");
@@ -2073,10 +2194,19 @@ async function requestBestMoves() {
   // Если игрок держит, перетаскивает или выбирает фигуру — не перебиваем подсказки
   if (isInteractingWithBoard(board)) return;
 
+  if (isBoardAnimating(board)) {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      requestBestMoves();
+    }, 60);
+    return;
+  }
+
   const fen = parseBoardToFEN(board);
   if (!fen) return;
   if (fen === lastAnalyzedFEN) return;
   lastAnalyzedFEN = fen;
+  scheduleFollowUpCheck();
 
   const reqId = ++currentRequestId;
 
@@ -2259,7 +2389,8 @@ async function requestBestMoves() {
   const curLegitConfig = AMATEUR_CONFIGS[amateurMode] || AMATEUR_CONFIGS.legit1;
 
   if (amateurModeEnabled) {
-    cfg = { ...cfg, depth: curLegitConfig.depth, movetime: null };
+    const legitMovetime = IS_MOBILE_BUILD ? (amateurMode === "legit2" ? 450 : 800) : 3500;
+    cfg = { ...cfg, depth: curLegitConfig.depth, movetime: legitMovetime };
     if (output) {
       output.innerText = `${t(curLegitConfig.nameKey)} — ${t("searchingTurn")} (${turnName})...`;
     }
@@ -2418,7 +2549,7 @@ function onAnalysisReceived(res, fen, isOpponentTurn, reqId) {
   updateEvalBar(bestScore, activeTurn);
   drawAllVisuals({
     moves: displayMoves,
-    premoveMove: (isOpponentTurn && isPremovesEnabled) ? res.ponderMove : null,
+    premoveMove: null,
     activeTurn
   });
 
@@ -2426,10 +2557,6 @@ function onAnalysisReceived(res, fen, isOpponentTurn, reqId) {
     let text = formatMovesLog(displayMoves, activeTurn, isFlipped);
     if (amateurModeEnabled && !isOpponentTurn) {
       text = `${t("amateurModeOn")}\n` + text;
-    }
-    if (isOpponentTurn && isPremovesEnabled && res.ponderMove) {
-      const pm = res.ponderMove;
-      text += `\n${t("premoveLabel")} ${pm.slice(0, 2).toUpperCase()} ➔ ${pm.slice(2, 4).toUpperCase()}`;
     }
     output.innerText = text;
   }
@@ -2468,6 +2595,7 @@ function setupBoardObserver() {
       if (lastBoardFlipped !== null && nowFlipped !== lastBoardFlipped) {
         lastBoardFlipped = nowFlipped;
         ++currentRequestId;
+        clearTimeout(followUpCheckTimer);
         clearOverlay();
         lastRenderedState = null;
         lastAnalyzedFEN = "";
@@ -2710,11 +2838,11 @@ function createWidget() {
             <span>${t("amateurModeLabel")}</span>
           </div>
           <div class="style-buttons-row" style="flex-direction: column; gap: 4px;">
-            <button type="button" class="btn-style-pill btn-legit-pill ${amateurMode === 'legit1' ? 'active' : ''}" data-legit="legit1" style="padding: 5px 8px; font-size: 10px; display: flex; justify-content: space-between; align-items: center;" title="${t("legit1Tip")}">
+            <button type="button" class="btn-style-pill btn-legit-pill ${amateurMode === 'legit1' ? 'active' : ''}" data-legit="legit1" title="${t("legit1Tip")}">
               <span><b>${t("legit1Title")}</b></span>
               <span style="opacity: 0.85; font-size: 9px;">${t("legit1Desc")}</span>
             </button>
-            <button type="button" class="btn-style-pill btn-legit-pill ${amateurMode === 'legit2' ? 'active' : ''}" data-legit="legit2" style="padding: 5px 8px; font-size: 10px; display: flex; justify-content: space-between; align-items: center;" title="${t("legit2Tip")}">
+            <button type="button" class="btn-style-pill btn-legit-pill ${amateurMode === 'legit2' ? 'active' : ''}" data-legit="legit2" title="${t("legit2Tip")}">
               <span><b>${t("legit2Title")}</b></span>
               <span style="opacity: 0.85; font-size: 9px;">${t("legit2Desc")}</span>
             </button>
@@ -2917,8 +3045,10 @@ function createWidget() {
       btn.classList.add("active");
 
       ++currentRequestId;
+      clearTimeout(followUpCheckTimer);
       clearOverlay();
-      const targetPV = arrowMode === "multi5" ? 5 : (arrowMode === "multi1" ? 1 : 3);
+      lastRenderedState = null;
+      const targetPV = amateurModeEnabled ? 5 : (arrowMode === "multi5" ? 5 : (arrowMode === "multi1" ? 1 : 3));
       extApi.runtime.sendMessage({ type: "SET_MULTIPV", multiPV: targetPV }, () => {
         if (extApi.runtime && extApi.runtime.lastError) { /* silent */ }
       });
@@ -2950,6 +3080,9 @@ function createWidget() {
       }
 
       ++currentRequestId;
+      clearTimeout(followUpCheckTimer);
+      clearOverlay();
+      lastRenderedState = null;
       lastAnalyzedFEN = "";
       requestBestMoves();
     });
@@ -3003,6 +3136,9 @@ function createWidget() {
         btn.classList.add("active");
 
         ++currentRequestId;
+        clearTimeout(followUpCheckTimer);
+        clearOverlay();
+        lastRenderedState = null;
         lastAnalyzedFEN = "";
         requestBestMoves();
       }
@@ -3034,6 +3170,7 @@ function createWidget() {
     const board = getBoardElement();
     const out = document.getElementById("chess-assistant-output");
     ++currentRequestId;
+    clearTimeout(followUpCheckTimer);
     clearOverlay();
     lastRenderedState = null;
     lastAnalyzedFEN = "";
@@ -3064,6 +3201,7 @@ function createWidget() {
     updateToggleHintsUI();
     const out = document.getElementById("chess-assistant-output");
     ++currentRequestId;
+    clearTimeout(followUpCheckTimer);
     if (!isAutoHintEnabled) {
       clearTimeout(debounceTimer);
       clearOverlay();
@@ -3089,6 +3227,7 @@ function createWidget() {
       isAutoHintEnabled = e.target.checked;
       updateToggleHintsUI();
       ++currentRequestId;
+      clearTimeout(followUpCheckTimer);
       if (!isAutoHintEnabled) {
         clearTimeout(debounceTimer);
         clearOverlay();
@@ -3107,6 +3246,9 @@ function createWidget() {
     myTurnToggle.addEventListener("change", (e) => {
       isOnlyMyTurnEnabled = e.target.checked;
       ++currentRequestId;
+      clearTimeout(followUpCheckTimer);
+      clearOverlay();
+      lastRenderedState = null;
       lastAnalyzedFEN = "";
       requestBestMoves();
     });
@@ -3118,6 +3260,7 @@ function createWidget() {
       isPremovesEnabled = e.target.checked;
       safeSetStorage("chess_premoves_enabled", isPremovesEnabled ? "true" : "false");
       ++currentRequestId;
+      clearTimeout(followUpCheckTimer);
       lastAnalyzedFEN = "";
       if (!isPremovesEnabled) {
         clearOverlay();
@@ -3172,6 +3315,7 @@ if (typeof window !== "undefined" && typeof document !== "undefined") {
   });
 
   window.addEventListener("pointerdown", (e) => {
+    if (e.pointerType === "mouse" && e.button !== 0) return;
     const board = getBoardElement();
     if (board && e.target && (board.contains(e.target) || (e.target.closest && e.target.closest("wc-chess-board, chess-board, cg-board, .cg-wrap")))) {
       isUserInteractingWithBoard = true;
@@ -3180,6 +3324,7 @@ if (typeof window !== "undefined" && typeof document !== "undefined") {
 
   window.addEventListener("pointerup", handleBoardInteractionEnd, { capture: true, passive: true });
   window.addEventListener("pointercancel", handleBoardInteractionEnd, { capture: true, passive: true });
+  window.addEventListener("contextmenu", handleBoardInteractionEnd, { capture: true, passive: true });
   window.addEventListener("touchend", handleBoardInteractionEnd, { capture: true, passive: true });
 
   if (typeof extApi !== "undefined" && extApi.runtime && extApi.runtime.onMessage) {
@@ -3195,6 +3340,15 @@ if (typeof window !== "undefined" && typeof document !== "undefined") {
   setInterval(() => {
     createWidget();
     setupBoardObserver();
+    if (isAutoHintEnabled) {
+      const b = getBoardElement();
+      if (b && !isInteractingWithBoard(b) && !isBoardAnimating(b)) {
+        const fen = parseBoardToFEN(b);
+        if (fen && fen !== lastAnalyzedFEN) {
+          requestBestMoves();
+        }
+      }
+    }
   }, 1500);
 
   setTimeout(() => {

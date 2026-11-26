@@ -143,6 +143,11 @@ const mobileCssOverrides = `
   touch-action: manipulation !important;
   box-sizing: border-box !important;
 }
+.btn-legit-pill {
+  justify-content: space-between !important;
+  padding: 6px 10px !important;
+  gap: 8px !important;
+}
 .btn-settings,
 .btn-minimize,
 .btn-panel-close {
@@ -164,15 +169,29 @@ const mobileCssOverrides = `
 }
 `;
 
+function minifyCss(css) {
+  const strings = [];
+  const protectedCss = css.replace(/(["'])(?:\\.|(?!\1)[^\\\r\n])*\1|\/\*[\s\S]*?\*\//g, (match, quote) => {
+    if (!quote) return '';
+    const idx = strings.length;
+    strings.push(match);
+    return `__CSS_STR_${idx}__`;
+  });
+
+  const minified = protectedCss
+    .replace(/\s+/g, ' ')
+    .replace(/\s*([{}>~;,])\s*/g, '$1')
+    .replace(/:\s+/g, ':')
+    .replace(/;}/g, '}')
+    .trim();
+
+  return minified.replace(/__CSS_STR_(\d+)__/g, (_, idx) => strings[Number(idx)]);
+}
+
 let css = fs.readFileSync(path.join(SRC_DIR, 'content', 'overlay.css'), 'utf8');
 css = css.replace(/-webkit-backdrop-filter:\s*blur\([^)]*\);?/gi, '');
 css = css.replace(/backdrop-filter:\s*blur\([^)]*\);?/gi, '');
-css = (css + '\n' + mobileCssOverrides)
-  .replace(/\/\*[\s\S]*?\*\//g, '')
-  .replace(/\s+/g, ' ')
-  .replace(/\s*([{}:;,>~])\s*/g, '$1')
-  .replace(/;}/g, '}')
-  .trim();
+css = minifyCss(css + '\n' + mobileCssOverrides);
 fs.writeFileSync(path.join(PHONE_DIR, 'content', 'overlay.css'), css, 'utf8');
 
 // 5. Активация флага IS_MOBILE_BUILD = true в background.js и content.js

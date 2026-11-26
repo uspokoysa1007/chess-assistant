@@ -13,7 +13,11 @@ let currentMultiPV = IS_MOBILE_BUILD ? 1 : 3;
 let desiredMultiPV = currentMultiPV;
 
 // Массив кандидатов для MultiPV 1..5: { move, score, ponder }
-let candidates = [];
+let completedDepth = 0;
+let completedCandidates = [];
+let activeDepth = 0;
+let activeDepthCandidates = [];
+let moveInfoMap = new Map();
 
 let isSearching = false;
 let currentSearch = null; // { fen, options, resolve, timer, emergencyTimer, stopSent, cancelled }
@@ -37,6 +41,24 @@ const CANCELLED_SEARCH_RESULT = {
   bestScore: null
 };
 
+const ERROR_SEARCH_RESULT = {
+  cancelled: true,
+  timedOut: true,
+  moves: [],
+  ponderMove: null,
+  bestMove: null,
+  bestScore: null
+};
+
+function destroyWorker(worker) {
+  if (!worker) return;
+  worker.onmessage = null;
+  worker.onerror = null;
+  try {
+    worker.terminate();
+  } catch (_) {}
+}
+
 function initStockfish() {
   if (stockfish) return;
 
@@ -44,13 +66,14 @@ function initStockfish() {
     const workerUrl = extApi.runtime.getURL(
       IS_MOBILE_BUILD ? "background/stockfish-19.js" : "background/stockfish-19-full.js"
     );
-    stockfish = new Worker(workerUrl);
+    const worker = new Worker(workerUrl);
+    stockfish = worker;
     isReady = false;
     isUciOk = false;
 
-    stockfish.onerror = function (err) {
+    worker.onerror = function (err) {
+      if (worker !== stockfish) return;
       console.error("❌ [Stockfish Worker Error]:", err);
-      const crashedWorker = stockfish;
       stockfish = null;
       isReady = false;
       isUciOk = false;
@@ -60,23 +83,20 @@ function initStockfish() {
         wedgedWorkerTimer = null;
       }
 
-      if (crashedWorker) {
-        try {
-          crashedWorker.terminate();
-        } catch (_) {}
-      }
+      destroyWorker(worker);
 
       if (currentSearch) {
-        finishCurrentSearch({ ...EMPTY_SEARCH_RESULT });
+        finishCurrentSearch({ ...ERROR_SEARCH_RESULT });
       }
       if (nextSearch) {
         const pending = nextSearch;
         nextSearch = null;
-        pending.resolve({ ...EMPTY_SEARCH_RESULT });
+        pending.resolve({ ...ERROR_SEARCH_RESULT });
       }
     };
 
-    stockfish.onmessage = function (event) {
+    worker.onmessage = function (event) {
+      if (worker !== stockfish) return;
       const line = typeof event.data === "string" ? event.data : "";
 
       if (line.startsWith("id name")) {
@@ -89,13 +109,13 @@ function initStockfish() {
           currentMultiPV = desiredMultiPV;
           if (IS_MOBILE_BUILD) {
             // Оптимизация параметров WASM-движка под мобильные процессоры
-            stockfish.postMessage("setoption name Threads value 1");
-            stockfish.postMessage("setoption name Hash value 16");
-            stockfish.postMessage("setoption name Ponder value false");
-            stockfish.postMessage("setoption name Move Overhead value 10");
+            worker.postMessage("setoption name Threads value 1");
+            worker.postMessage("setoption name Hash value 16");
+            worker.postMessage("setoption name Ponder value false");
+            worker.postMessage("setoption name Move Overhead value 10");
           }
-          stockfish.postMessage(`setoption name MultiPV value ${currentMultiPV}`);
-          stockfish.postMessage("isready");
+          worker.postMessage(`setoption name MultiPV value ${currentMultiPV}`);
+          worker.postMessage("isready");
         }
       }
 
@@ -132,41 +152,85 @@ function initStockfish() {
         return;
       }
 
-      // Универсальный парсинг линий MultiPV (1..5) + второго хода (ponder / премув)
-      if (line.includes("multipv ")) {
+      // Универсальный парсинг линий MultiPV (1..5) + второго хода (ponder / премув) с учётом глубины
+      if (line.includes("multipv ") || (currentMultiPV === 1 && line.startsWith("info ") && /\bscore\b/.test(line))) {
         const mpvMatch = line.match(/\bmultipv\s+(\d+)/);
-        if (mpvMatch) {
-          const idx = parseInt(mpvMatch[1], 10) - 1;
-          if (idx >= 0 && idx < 5) {
-            if (!candidates[idx]) {
-              candidates[idx] = { move: null, score: null, ponder: null };
+        const idx = mpvMatch ? parseInt(mpvMatch[1], 10) - 1 : 0;
+        if (idx >= 0 && idx < 5) {
+          const depthMatch = line.match(/\bdepth\s+(\d+)/);
+          const depth = depthMatch ? parseInt(depthMatch[1], 10) : activeDepth;
+          const isBound = /\b(lowerbound|upperbound)\b/.test(line);
+
+          const cpMatch = line.match(/\bscore\s+cp\s+(-?\d+)/);
+          const mateMatch = line.match(/\bscore\s+mate\s+(-?\d+)/);
+          let parsedScore = null;
+          if (cpMatch) {
+            parsedScore = { type: "cp", value: parseInt(cpMatch[1], 10) };
+          } else if (mateMatch) {
+            parsedScore = { type: "mate", value: parseInt(mateMatch[1], 10) };
+          }
+
+          const pvMatch = line.match(/\bpv\s+(.+)$/);
+          let newMove = null;
+          let parsedPonder = null;
+          if (pvMatch) {
+            const pvMoves = pvMatch[1].trim().split(/\s+/);
+            if (pvMoves[0] && pvMoves[0] !== "(none)") {
+              newMove = pvMoves[0];
+              if (pvMoves[1] && pvMoves[1] !== "(none)") {
+                parsedPonder = pvMoves[1];
+              }
+            }
+          }
+
+          if (depth > activeDepth) {
+            const activeValid = activeDepthCandidates.filter((c) => c && c.move).length;
+            const completedValid = completedCandidates.filter((c) => c && c.move).length;
+            if (activeValid > 0 && (activeValid >= completedValid || completedValid === 0)) {
+              completedCandidates = activeDepthCandidates.map((c) => (c ? { ...c } : null));
+              completedDepth = activeDepth;
+            }
+            activeDepth = depth;
+            activeDepthCandidates = [];
+          }
+
+          if (newMove) {
+            const prev = moveInfoMap.get(newMove);
+            if (!prev || depth > prev.depth || (depth === prev.depth && (!isBound || prev.isBound))) {
+              moveInfoMap.set(newMove, {
+                move: newMove,
+                score: parsedScore || prev?.score || null,
+                ponder: parsedPonder || (isBound && prev ? prev.ponder : null),
+                depth,
+                isBound
+              });
+            }
+          }
+
+          if (depth === activeDepth) {
+            if (!activeDepthCandidates[idx]) {
+              activeDepthCandidates[idx] = { move: null, score: null, ponder: null };
             }
 
-            const isBound = /\b(lowerbound|upperbound)\b/.test(line);
+            if (parsedScore && (!isBound || !activeDepthCandidates[idx].score)) {
+              activeDepthCandidates[idx].score = parsedScore;
+            }
 
-            const cpMatch = line.match(/\bscore\s+cp\s+(-?\d+)/);
-            const mateMatch = line.match(/\bscore\s+mate\s+(-?\d+)/);
-            if (!isBound || !candidates[idx].score) {
-              if (cpMatch) {
-                candidates[idx].score = { type: "cp", value: parseInt(cpMatch[1], 10) };
-              } else if (mateMatch) {
-                candidates[idx].score = { type: "mate", value: parseInt(mateMatch[1], 10) };
+            if (newMove && (!isBound || !activeDepthCandidates[idx].move)) {
+              const moveChanged = activeDepthCandidates[idx].move !== newMove;
+              activeDepthCandidates[idx].move = newMove;
+              if (parsedPonder) {
+                activeDepthCandidates[idx].ponder = parsedPonder;
+              } else if (moveChanged || !isBound) {
+                activeDepthCandidates[idx].ponder = null;
               }
             }
 
-            const pvMatch = line.match(/\bpv\s+(.+)$/);
-            if (pvMatch && (!isBound || !candidates[idx].move)) {
-              const pvMoves = pvMatch[1].trim().split(/\s+/);
-              if (pvMoves[0] && pvMoves[0] !== "(none)") {
-                const newMove = pvMoves[0];
-                const moveChanged = candidates[idx].move !== newMove;
-                candidates[idx].move = newMove;
-                if (pvMoves[1] && pvMoves[1] !== "(none)") {
-                  candidates[idx].ponder = pvMoves[1];
-                } else if (moveChanged) {
-                  candidates[idx].ponder = null;
-                }
-              }
+            const validCount = activeDepthCandidates.filter((c) => c && c.move).length;
+            const completedCount = completedCandidates.filter((c) => c && c.move).length;
+            if (!isBound && (validCount >= currentMultiPV || (validCount >= completedCount && idx + 1 >= currentMultiPV))) {
+              completedCandidates = activeDepthCandidates.map((c) => (c ? { ...c } : null));
+              completedDepth = activeDepth;
             }
           }
         }
@@ -174,6 +238,7 @@ function initStockfish() {
 
       // Завершение анализа позиции
       if (line.startsWith("bestmove")) {
+        if (!currentSearch) return;
         const parts = line.trim().split(/\s+/);
         const bestFromLine = parts[1] && parts[1] !== "(none)" ? parts[1] : null;
         const ponderFromLine = (parts[2] === "ponder" && parts[3] && parts[3] !== "(none)") ? parts[3] : null;
@@ -193,7 +258,7 @@ function initStockfish() {
       }
     };
 
-    stockfish.postMessage("uci");
+    worker.postMessage("uci");
   } catch (err) {
     console.error("❌ Ошибка при создании Worker Stockfish:", err);
     stockfish = null;
@@ -206,8 +271,20 @@ function buildMovesResult(fallbackBest, fallbackPonder = null) {
   const result = [];
   const seen = new Set();
 
-  for (let i = 0; i < candidates.length; i++) {
-    const item = candidates[i];
+  for (let i = 0; i < activeDepthCandidates.length; i++) {
+    const item = activeDepthCandidates[i];
+    if (item && item.move && item.move !== "(none)" && !seen.has(item.move)) {
+      seen.add(item.move);
+      result.push({
+        move: item.move,
+        score: item.score || null,
+        ponder: item.ponder || null
+      });
+    }
+  }
+
+  for (let i = 0; i < completedCandidates.length && result.length < currentMultiPV; i++) {
+    const item = completedCandidates[i];
     if (item && item.move && item.move !== "(none)" && !seen.has(item.move)) {
       seen.add(item.move);
       result.push({
@@ -224,10 +301,11 @@ function buildMovesResult(fallbackBest, fallbackPonder = null) {
       const [bestItem] = result.splice(existingIdx, 1);
       result.unshift(bestItem);
     } else if (existingIdx === -1) {
+      const info = moveInfoMap.get(fallbackBest);
       result.unshift({
         move: fallbackBest,
-        score: candidates[0]?.score || null,
-        ponder: fallbackPonder || null
+        score: info?.score || null,
+        ponder: fallbackPonder || info?.ponder || null
       });
       if (result.length > currentMultiPV) {
         result.length = currentMultiPV;
@@ -258,17 +336,13 @@ function scheduleEmergencyReset(searchState) {
           isUciOk = false;
           staleBestmovesPending = 0;
           wedgedWorkerTimer = null;
-          if (hungWorker) {
-            try {
-              hungWorker.terminate();
-            } catch (_) {}
-          }
+          destroyWorker(hungWorker);
           if (nextSearch) {
             initStockfish();
             if (!stockfish && nextSearch) {
               const pending = nextSearch;
               nextSearch = null;
-              pending.resolve({ ...EMPTY_SEARCH_RESULT });
+              pending.resolve({ ...ERROR_SEARCH_RESULT });
             }
           }
         }
@@ -298,7 +372,11 @@ function startSearch(fen, options, resolve) {
   }
 
   isSearching = true;
-  candidates = [];
+  completedDepth = 0;
+  completedCandidates = [];
+  activeDepth = 0;
+  activeDepthCandidates = [];
+  moveInfoMap = new Map();
 
   const movetime = options.movetime || null;
   const depth = options.depth || null;
@@ -374,10 +452,15 @@ function finishCurrentSearch(result) {
 
 function calculateMove(fen, options = {}) {
   return new Promise((resolve) => {
+    if (typeof fen !== "string" || !fen.trim()) {
+      resolve({ ...EMPTY_SEARCH_RESULT });
+      return;
+    }
+
     initStockfish();
 
     if (!stockfish) {
-      resolve({ ...EMPTY_SEARCH_RESULT });
+      resolve({ ...ERROR_SEARCH_RESULT });
       return;
     }
 

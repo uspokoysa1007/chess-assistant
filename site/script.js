@@ -27,6 +27,7 @@ const translations = {
     stat1: "ELO на ПК",
     stat2: "мобильная версия",
     stat3: "ходов глубины",
+    stat4Val: "0 ₽",
     stat4: "бесплатно навсегда",
     browsersEyebrow: "Совместимость",
     browsersTitle: "Под какие браузеры подходит?",
@@ -101,6 +102,7 @@ const translations = {
     stat1: "ELO on desktop",
     stat2: "mobile build",
     stat3: "search depth",
+    stat4Val: "$0",
     stat4: "free forever",
     browsersEyebrow: "Compatibility",
     browsersTitle: "Supported Browsers",
@@ -161,10 +163,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
   tabButtons.forEach((btn) => {
     btn.addEventListener("click", () => {
-      tabButtons.forEach((b) => b.classList.remove("active"));
+      tabButtons.forEach((b) => {
+        b.classList.remove("active");
+        b.setAttribute("aria-selected", "false");
+      });
       tabContents.forEach((c) => c.classList.remove("active"));
 
       btn.classList.add("active");
+      btn.setAttribute("aria-selected", "true");
       const target = document.getElementById(btn.getAttribute("data-tab"));
       if (target) target.classList.add("active");
     });
