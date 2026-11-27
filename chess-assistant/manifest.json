@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Шахматный Помощник",
-  "version": "2.4",
+  "version": "2.5",
   "description": "Шахматный плагин со Stockfish 19 для Chess.com и Lichess",
   "permissions": [
     "activeTab"

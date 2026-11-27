@@ -36,10 +36,9 @@ chess-board,
   right: 14px;
   width: 272px;
   max-height: calc(100vh - 24px);
-  overflow-y: auto;
-  overflow-x: hidden;
-  scrollbar-width: thin;
-  scrollbar-color: #2e1f4a #080510;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   background: rgba(6, 4, 12, 0.97);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
@@ -52,6 +51,15 @@ chess-board,
   z-index: 9999999;
   user-select: none;
   transition: all 0.2s ease;
+}
+
+.widget-body {
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: #2e1f4a #080510;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 #chess-assistant-widget.minimized {

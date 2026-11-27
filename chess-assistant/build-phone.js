@@ -1,5 +1,5 @@
 /**
- * Скрипт сборки мобильной версии Chess Assistant (v2.4 • Mobile Lightspeed + WASM Turbo)
+ * Скрипт сборки мобильной версии Chess Assistant (v2.5 • Mobile Lightspeed + WASM Turbo)
  * Переключает единую кодовую базу в режим IS_MOBILE_BUILD = true,
  * оптимизирует стили под сенсорный экран, упаковывает в chess-assistant_phone.xpi
  * и синхронизирует файл скачивания в site/downloads/chess-assistant_phone.xpi.
@@ -7,7 +7,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
+const { packDirectoryToXpi } = require('../scripts/pack-xpi');
 
 global.self = global;
 
@@ -17,7 +17,7 @@ const PHONE_DIR = path.join(ROOT_DIR, 'chess-assistant_phone');
 const XPI_PATH = path.join(PHONE_DIR, 'chess-assistant_phone.xpi');
 const SITE_DOWNLOAD_PATH = path.join(ROOT_DIR, 'site', 'downloads', 'chess-assistant_phone.xpi');
 
-console.log('⚡ [Phone Build] Сборка мобильной версии Chess Assistant v2.4...');
+console.log('⚡ [Phone Build] Сборка мобильной версии Chess Assistant v2.5...');
 
 // 1. Очистка и создание структуры
 if (fs.existsSync(PHONE_DIR)) {
@@ -42,7 +42,7 @@ const srcManifest = JSON.parse(fs.readFileSync(path.join(SRC_DIR, 'manifest.json
 const manifest = {
   manifest_version: 3,
   name: 'Шахматный Помощник (Mobile)',
-  version: srcManifest.version || '2.4',
+  version: srcManifest.version || '2.5',
   description: 'Мобильный шахматный плагин со Stockfish 19 WASM Lite',
   permissions: ['activeTab'],
   action: {
@@ -95,6 +95,10 @@ const mobileCssOverrides = `
   touch-action: pan-y !important;
   z-index: 10000000 !important;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.7) !important;
+}
+#chess-assistant-widget .widget-body {
+  touch-action: pan-y !important;
+  -webkit-overflow-scrolling: touch !important;
 }
 #chess-assistant-widget.minimized {
   width: auto !important;
@@ -250,26 +254,7 @@ fs.copyFileSync(path.join(SRC_DIR, 'background', 'stockfish-19.wasm'), path.join
 
 // 8. Упаковка в chess-assistant_phone.xpi и синхронизация с сайтом
 console.log('📦 [Phone Build] Упаковка в chess-assistant_phone.xpi...');
-if (fs.existsSync(XPI_PATH)) {
-  fs.unlinkSync(XPI_PATH);
-}
-
-const psScript = `
-  Add-Type -AssemblyName System.IO.Compression;
-  Add-Type -AssemblyName System.IO.Compression.FileSystem;
-  $phone = '${PHONE_DIR.replace(/\\/g, '/')}';
-  $xpi = '${XPI_PATH.replace(/\\/g, '/')}';
-  $archive = [System.IO.Compression.ZipFile]::Open($xpi, [System.IO.Compression.ZipArchiveMode]::Create);
-  $files = Get-ChildItem -Path $phone -Recurse -File | Where-Object { $_.Extension -ne '.xpi' };
-  foreach ($f in $files) {
-    $rel = $f.FullName.Substring($phone.Length + 1);
-    $rel = $rel.Replace([char]92, [char]47);
-    [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, $f.FullName, $rel, [System.IO.Compression.CompressionLevel]::Optimal);
-  };
-  $archive.Dispose();
-`;
-
-execSync(`powershell -NoProfile -Command "${psScript.replace(/[\r\n]+/g, ' ')}"`, { stdio: 'inherit' });
+packDirectoryToXpi(PHONE_DIR, XPI_PATH, { excludeExt: '.xpi' });
 
 fs.mkdirSync(path.dirname(SITE_DOWNLOAD_PATH), { recursive: true });
 fs.copyFileSync(XPI_PATH, SITE_DOWNLOAD_PATH);

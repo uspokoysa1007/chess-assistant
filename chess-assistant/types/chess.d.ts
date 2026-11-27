@@ -1,5 +1,5 @@
 /**
- * ♟️ Chess Assistant v2.4 — TypeScript Описания Типов (Type Definitions)
+ * ♟️ Chess Assistant v2.5 — TypeScript Описания Типов (Type Definitions)
  *
  * Этот файл описывает структуры данных, которые используются
  * в скриптах расширения (content.js и background.js).
@@ -47,6 +47,7 @@ export interface MoveCandidate {
 /** Ответ background.js на запрос анализа позиции */
 export interface AnalysisResponse {
   cancelled: boolean;
+  timedOut?: boolean;
   moves: MoveCandidate[];
   ponderMove: string | null;
   bestMove: string | null;
@@ -65,6 +66,8 @@ export interface VisualsState {
 export interface AnalyzePositionMessage {
   type: "ANALYZE_POSITION";
   fen: string;
+  uciBaseFen?: string | null;
+  uciMoves?: string[] | null;
   depth?: number | null;
   movetime?: number | null;
   multiPV?: number;

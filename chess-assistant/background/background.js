@@ -184,23 +184,27 @@ function initStockfish() {
           }
 
           if (depth > activeDepth) {
-            const activeValid = activeDepthCandidates.filter((c) => c && c.move).length;
-            const completedValid = completedCandidates.filter((c) => c && c.move).length;
-            if (activeValid > 0 && (activeValid >= completedValid || completedValid === 0)) {
-              completedCandidates = activeDepthCandidates.map((c) => (c ? { ...c } : null));
-              completedDepth = activeDepth;
+            // Не сбрасываем активный слой, если на новой глубине пока прилетел только промежуточный bound без полного хода
+            if (!isBound || activeDepth === 0) {
+              const activeValid = activeDepthCandidates.filter((c) => c && c.move && !c.isBound).length;
+              const completedValid = completedCandidates.filter((c) => c && c.move).length;
+              if (activeValid > 0 && (activeValid >= completedValid || completedValid === 0)) {
+                completedCandidates = activeDepthCandidates.map((c) => (c ? { ...c } : null));
+                completedDepth = activeDepth;
+              }
+              activeDepth = depth;
+              activeDepthCandidates = [];
             }
-            activeDepth = depth;
-            activeDepthCandidates = [];
           }
 
           if (newMove) {
             const prev = moveInfoMap.get(newMove);
             if (!prev || depth > prev.depth || (depth === prev.depth && (!isBound || prev.isBound))) {
+              const exactPrevScore = (!prev?.isBound && prev?.score) ? prev.score : null;
               moveInfoMap.set(newMove, {
                 move: newMove,
-                score: parsedScore || prev?.score || null,
-                ponder: parsedPonder || (isBound && prev ? prev.ponder : null),
+                score: (!isBound && parsedScore) ? parsedScore : (exactPrevScore || parsedScore || prev?.score || null),
+                ponder: parsedPonder || (prev ? prev.ponder : null),
                 depth,
                 isBound
               });
@@ -209,24 +213,35 @@ function initStockfish() {
 
           if (depth === activeDepth) {
             if (!activeDepthCandidates[idx]) {
-              activeDepthCandidates[idx] = { move: null, score: null, ponder: null };
+              activeDepthCandidates[idx] = { move: null, score: null, ponder: null, depth, isBound };
             }
 
-            if (parsedScore && (!isBound || !activeDepthCandidates[idx].score)) {
+            const prevExact = newMove ? moveInfoMap.get(newMove) : null;
+            if (!isBound && parsedScore) {
               activeDepthCandidates[idx].score = parsedScore;
+              activeDepthCandidates[idx].isBound = false;
+              activeDepthCandidates[idx].depth = depth;
+            } else if (!activeDepthCandidates[idx].score) {
+              activeDepthCandidates[idx].score = prevExact?.score || parsedScore || null;
+              activeDepthCandidates[idx].isBound = Boolean(isBound && !prevExact?.score);
+              activeDepthCandidates[idx].depth = prevExact?.score ? prevExact.depth : depth;
             }
 
             if (newMove && (!isBound || !activeDepthCandidates[idx].move)) {
               const moveChanged = activeDepthCandidates[idx].move !== newMove;
               activeDepthCandidates[idx].move = newMove;
+              if (moveChanged && isBound && prevExact?.score) {
+                activeDepthCandidates[idx].score = prevExact.score;
+                activeDepthCandidates[idx].depth = prevExact.depth;
+              }
               if (parsedPonder) {
                 activeDepthCandidates[idx].ponder = parsedPonder;
               } else if (moveChanged || !isBound) {
-                activeDepthCandidates[idx].ponder = null;
+                activeDepthCandidates[idx].ponder = prevExact?.ponder || null;
               }
             }
 
-            const validCount = activeDepthCandidates.filter((c) => c && c.move).length;
+            const validCount = activeDepthCandidates.filter((c) => c && c.move && !c.isBound).length;
             const completedCount = completedCandidates.filter((c) => c && c.move).length;
             if (!isBound && (validCount >= currentMultiPV || (validCount >= completedCount && idx + 1 >= currentMultiPV))) {
               completedCandidates = activeDepthCandidates.map((c) => (c ? { ...c } : null));
@@ -277,8 +292,9 @@ function buildMovesResult(fallbackBest, fallbackPonder = null) {
       seen.add(item.move);
       result.push({
         move: item.move,
-        score: item.score || null,
-        ponder: item.ponder || null
+        score: item.score ? { ...item.score } : null,
+        ponder: item.ponder || null,
+        _depth: item.depth || activeDepth
       });
     }
   }
@@ -289,8 +305,9 @@ function buildMovesResult(fallbackBest, fallbackPonder = null) {
       seen.add(item.move);
       result.push({
         move: item.move,
-        score: item.score || null,
-        ponder: item.ponder || null
+        score: item.score ? { ...item.score } : null,
+        ponder: item.ponder || null,
+        _depth: item.depth || completedDepth
       });
     }
   }
@@ -304,8 +321,9 @@ function buildMovesResult(fallbackBest, fallbackPonder = null) {
       const info = moveInfoMap.get(fallbackBest);
       result.unshift({
         move: fallbackBest,
-        score: info?.score || null,
-        ponder: fallbackPonder || info?.ponder || null
+        score: info?.score ? { ...info.score } : null,
+        ponder: fallbackPonder || info?.ponder || null,
+        _depth: info?.depth || activeDepth
       });
       if (result.length > currentMultiPV) {
         result.length = currentMultiPV;
@@ -316,7 +334,24 @@ function buildMovesResult(fallbackBest, fallbackPonder = null) {
     }
   }
 
-  return result;
+  // Согласование оценок при смешивании незавершённой новой глубины со старой:
+  // ход более низкого ранга со старой глубины не может иметь cp-оценку выше хода более высокого ранга с новой глубины
+  for (let i = 1; i < result.length; i++) {
+    const prev = result[i - 1];
+    const curr = result[i];
+    if (
+      prev.score &&
+      curr.score &&
+      prev.score.type === "cp" &&
+      curr.score.type === "cp" &&
+      curr._depth < prev._depth &&
+      curr.score.value > prev.score.value
+    ) {
+      curr.score = { type: "cp", value: prev.score.value };
+    }
+  }
+
+  return result.map(({ move, score, ponder }) => ({ move, score, ponder }));
 }
 
 initStockfish();
@@ -415,7 +450,17 @@ function startSearch(fen, options, resolve) {
 
   currentSearch = searchState;
 
-  stockfish.postMessage(`position fen ${fen}`);
+  const hasHistoryMoves =
+    typeof options.uciBaseFen === "string" &&
+    options.uciBaseFen.trim() &&
+    Array.isArray(options.uciMoves) &&
+    options.uciMoves.length > 0;
+
+  if (hasHistoryMoves) {
+    stockfish.postMessage(`position fen ${options.uciBaseFen.trim()} moves ${options.uciMoves.join(" ")}`);
+  } else {
+    stockfish.postMessage(`position fen ${fen}`);
+  }
   if (movetime && depth) {
     stockfish.postMessage(`go depth ${depth} movetime ${movetime}`);
   } else if (movetime) {
@@ -500,6 +545,8 @@ extApi.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   if (request.type === "ANALYZE_POSITION") {
     calculateMove(request.fen, {
+      uciBaseFen: request.uciBaseFen || null,
+      uciMoves: Array.isArray(request.uciMoves) ? request.uciMoves : null,
       depth: request.depth,
       movetime: request.movetime,
       multiPV: request.multiPV

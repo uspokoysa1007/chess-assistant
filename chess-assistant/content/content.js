@@ -26,8 +26,10 @@ function safeSetStorage(key, value) {
 let boardObserver = null;
 let boardResizeObserver = null;
 let currentObservedBoard = null;
-let isAutoHintEnabled = true;
-let isOnlyMyTurnEnabled = true;
+const savedAutoHintsSetting = safeGetStorage("chess_auto_hints_enabled");
+let isAutoHintEnabled = savedAutoHintsSetting !== null ? savedAutoHintsSetting === "true" : true;
+const savedOnlyMyTurnSetting = safeGetStorage("chess_only_my_turn");
+let isOnlyMyTurnEnabled = savedOnlyMyTurnSetting !== null ? savedOnlyMyTurnSetting === "true" : true;
 const savedPremovesSetting = safeGetStorage("chess_premoves_enabled");
 let isPremovesEnabled = savedPremovesSetting !== null ? savedPremovesSetting === "true" : !IS_MOBILE_BUILD;
 let isMinimized = IS_MOBILE_BUILD;
@@ -354,6 +356,12 @@ let gameTracking = {
 let lastPlyCount = 0;
 let lastPieceCount = 0;
 let lastTrackedUrl = typeof location !== "undefined" ? location.href : "";
+let reversibleHistory = {
+  baseFen: "",
+  currentFen: "",
+  moves: [],
+  lastPosKey: ""
+};
 
 function countGridPieces(grid) {
   let count = 0;
@@ -377,6 +385,52 @@ function resetGameTracking() {
   lastPlyCount = 0;
   lastPieceCount = 0;
   lastTrackedUrl = typeof location !== "undefined" ? location.href : "";
+  reversibleHistory = {
+    baseFen: "",
+    currentFen: "",
+    moves: [],
+    lastPosKey: ""
+  };
+}
+
+function isElementVisible(el) {
+  if (!el) return false;
+  if (el.classList && (el.classList.contains("element-pool") || el.classList.contains("hidden"))) {
+    return false;
+  }
+  if (el.style) {
+    if (el.style.display === "none" || el.style.visibility === "hidden" || el.style.opacity === "0") {
+      return false;
+    }
+  }
+  const rect = el.getBoundingClientRect();
+  return rect.width > 0 && rect.height > 0;
+}
+
+function queryVisibleElements(root, selector) {
+  if (!root) return [];
+  return Array.from(root.querySelectorAll(selector)).filter(isElementVisible);
+}
+
+function isRedPremoveOrRightClick(hl) {
+  if (!hl) return false;
+  if (hl.classList && (hl.classList.contains("premove") || hl.classList.contains("highlight-premove"))) {
+    return true;
+  }
+  const bg = (hl.style && hl.style.backgroundColor) || "";
+  const m = bg.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
+  if (m) {
+    const r = parseInt(m[1], 10);
+    const g = parseInt(m[2], 10);
+    const b = parseInt(m[3], 10);
+    if (r >= 200 && g <= 115 && b <= 115) return true;
+  }
+  return false;
+}
+
+function getChesscomLastMoveHighlights(board) {
+  return queryVisibleElements(board, ".highlight:not(.element-pool):not(.selected)")
+    .filter((hl) => !isRedPremoveOrRightClick(hl));
 }
 
 function findFirstNonEmptySelector(selectors) {
@@ -388,11 +442,11 @@ function findFirstNonEmptySelector(selectors) {
 }
 
 const CHESSCOM_MOVE_SELECTORS = [
-  "wc-vertical-move-list .node",
-  "wc-simple-move-list .node",
-  ".vertical-move-list .node",
-  ".move-list-wrapper .node",
-  ".move-node",
+  "wc-vertical-move-list .node:not(.variation .node)",
+  "wc-simple-move-list .node:not(.variation .node)",
+  ".vertical-move-list .node:not(.variation .node)",
+  ".move-list-wrapper .node:not(.variation .node)",
+  ".move-node:not(.variation .move-node)",
   ".move-text-component"
 ];
 
@@ -400,9 +454,9 @@ const LICHESS_MOVE_SELECTORS = [
   "l4x kwdb",
   "rm6 kwdb",
   "l4x m2",
-  ".analyse__moves move",
-  ".tview2 move",
-  ".moves move"
+  ".analyse__moves move:not(interrupt move):not(variation move)",
+  ".tview2 move:not(interrupt move):not(variation move)",
+  ".moves move:not(variation move)"
 ];
 
 const Adapters = {
@@ -431,23 +485,25 @@ const Adapters = {
     isSelecting(board) {
       const b = board || this.getBoardElement();
       if (!b) return false;
-      return !!(
-        b.querySelector(".hint, .square-selected, .highlight.selected") ||
-        document.querySelector("wc-chess-board .hint, chess-board .hint, .board .hint")
-      );
+      return queryVisibleElements(
+        b,
+        ".hint:not(.element-pool), .capture-hint:not(.element-pool), .square-selected:not(.element-pool), .highlight.selected:not(.element-pool)"
+      ).length > 0;
     },
     isInteracting(board) {
       return isUserInteractingWithBoard || this.isDragging(board) || this.isSelecting(board);
     },
     detectTurnFromHighlights(board) {
       if (!board || this.isDragging(board)) return null;
-      const highlights = board.querySelectorAll(".highlight");
+      const highlights = getChesscomLastMoveHighlights(board);
       if (highlights.length === 2) {
         for (const hl of highlights) {
           const hlClasses = Array.from(hl.classList);
           const sqClass = hlClasses.find((c) => /^square-[1-8]{2}$/.test(c));
           if (sqClass) {
-            const piece = board.querySelector(`.piece.${sqClass}:not(.dragging)`) || board.querySelector(`.piece.${sqClass}`);
+            const piece =
+              board.querySelector(`.piece.${sqClass}:not(.dragging):not(.ghost):not(.element-pool)`) ||
+              board.querySelector(`.piece.${sqClass}:not(.ghost):not(.element-pool)`);
             if (piece) {
               const pieceClasses = Array.from(piece.classList);
               const typeClass = pieceClasses.find((c) => /^[wb][pnbrqk]$/.test(c));
@@ -558,7 +614,26 @@ const Adapters = {
       }
 
       moveNodes.slice(0, activePlyCount).forEach((node, idx) => {
-        const isWhite = idx % 2 === 0;
+        let isWhite = idx % 2 === 0;
+        if (
+          node.classList.contains("white") ||
+          node.classList.contains("white-move") ||
+          node.closest(".white-move")
+        ) {
+          isWhite = true;
+        } else if (
+          node.classList.contains("black") ||
+          node.classList.contains("black-move") ||
+          node.closest(".black-move")
+        ) {
+          isWhite = false;
+        } else {
+          const rawPly = node.getAttribute("data-ply");
+          if (rawPly !== null) {
+            const ply = parseInt(rawPly, 10);
+            if (!Number.isNaN(ply)) isWhite = ply % 2 === 1;
+          }
+        }
         const text = (node.textContent || "").trim();
         const html = node.innerHTML || "";
         const isKing = html.includes('figurine="K"') || html.includes("king") || /^(K|Кр|O-O|0-0)/i.test(text) || text.includes("O-O") || text.includes("0-0");
@@ -590,7 +665,7 @@ const Adapters = {
       if (rights === "") rights = "-";
 
       let enPassant = "-";
-      const highlights = board.querySelectorAll(".highlight");
+      const highlights = getChesscomLastMoveHighlights(board);
       if (highlights.length >= 2) {
         const sqs = [];
         highlights.forEach((hl) => {
@@ -662,7 +737,9 @@ const Adapters = {
       }
       const activeTurn = this.detectTurn(board);
       const { rights, enPassant, fullMove } = this.getCastlingAndEnPassant(board, grid, activeTurn, fenRanks);
-      return `${fenRanks} ${activeTurn} ${rights} ${enPassant} 0 ${fullMove}`;
+      const posKey = `${fenRanks} ${activeTurn} ${rights} ${enPassant}`;
+      const halfMove = updateReversibleHistory(posKey, fullMove, this.isDragging(board));
+      return `${posKey} ${halfMove} ${fullMove}`;
     }
   },
 
@@ -691,10 +768,7 @@ const Adapters = {
       const b = board || this.getBoardElement();
       if (!b) return false;
       const wrap = b.closest(".cg-wrap") || b;
-      return !!(
-        wrap.querySelector("square.selected, square.move-dest") ||
-        document.querySelector("cg-board square.selected, cg-board square.move-dest")
-      );
+      return queryVisibleElements(wrap, "square.selected, square.move-dest").length > 0;
     },
     isInteracting(board) {
       return isUserInteractingWithBoard || this.isDragging(board) || this.isSelecting(board);
@@ -705,9 +779,9 @@ const Adapters = {
     },
     detectTurnFromHighlights(board) {
       if (!board || this.isDragging(board) || this.isAnimating(board)) return null;
-      const lastMoves = board.querySelectorAll("square.last-move");
+      const lastMoves = queryVisibleElements(board, "square.last-move:not(.current-premove)");
       if (lastMoves.length === 2) {
-        const pieces = Array.from(board.querySelectorAll("piece:not(.dragging):not(.fading):not(.anim)"));
+        const pieces = Array.from(board.querySelectorAll("piece:not(.dragging):not(.fading):not(.anim)")).filter(isElementVisible);
         for (const sq of lastMoves) {
           const sqRect = sq.getBoundingClientRect();
           const piece = pieces.find((p) => {
@@ -806,8 +880,20 @@ const Adapters = {
         if (grid[7][7] !== "r") gameTracking.blackRookH8Moved = true;
       }
 
+      const firstPrev = moveNodes[0]?.previousElementSibling;
+      const startsWithBlackPlaceholder = Boolean(
+        firstPrev &&
+        !moveNodes.includes(firstPrev) &&
+        (firstPrev.classList.contains("empty") || /^(?:\.{3}|…)$/.test((firstPrev.textContent || "").trim()))
+      );
+
       moveNodes.slice(0, activePlyCount).forEach((node, idx) => {
-        const isWhite = idx % 2 === 0;
+        let isWhite = ((idx + (startsWithBlackPlaceholder ? 1 : 0)) % 2) === 0;
+        const rawPly = node.getAttribute("p");
+        if (rawPly !== null) {
+          const ply = parseInt(rawPly, 10);
+          if (!Number.isNaN(ply)) isWhite = ply % 2 === 1;
+        }
         const text = (node.textContent || "").trim();
         if (/^(K|O-O|0-0)/.test(text) || text.includes("O-O") || text.includes("0-0")) {
           if (isWhite) gameTracking.whiteKingMoved = true;
@@ -836,7 +922,7 @@ const Adapters = {
       if (rights === "") rights = "-";
 
       let enPassant = "-";
-      const lastMoves = (board || document).querySelectorAll("square.last-move");
+      const lastMoves = queryVisibleElements(board || document, "square.last-move:not(.current-premove)");
       if (lastMoves.length >= 2) {
         const bRect = board.getBoundingClientRect();
         const sqW = bRect.width / 8;
@@ -869,7 +955,8 @@ const Adapters = {
           }
         }
       }
-      const fullMove = Math.max(1, Math.floor(activePlyCount / 2) + 1);
+      const effectivePlyCount = activePlyCount + (startsWithBlackPlaceholder ? 1 : 0);
+      const fullMove = Math.max(1, Math.floor(effectivePlyCount / 2) + 1);
       return { rights, enPassant, fullMove };
     },
     parseBoardToFEN(board) {
@@ -897,10 +984,11 @@ const Adapters = {
         return isW ? r.toUpperCase() : r.toLowerCase();
       }
 
-      const hasDragging = !!board.querySelector("piece.dragging");
+      const draggingEl = board.querySelector("piece.dragging");
+      const hasDragging = !!draggingEl;
       const pieces = board.querySelectorAll(hasDragging ? "piece:not(.dragging):not(.fading)" : "piece:not(.ghost):not(.fading)");
       pieces.forEach((p) => {
-        if (p.classList.contains("dragging")) return;
+        if (p.classList.contains("dragging") || !isElementVisible(p)) return;
         const pType = getPieceType(p);
         if (!pType) return;
         const pr = p.getBoundingClientRect();
@@ -913,6 +1001,22 @@ const Adapters = {
         const row = isFlipped ? rankIndex : 7 - rankIndex;
         grid[row][file] = pType;
       });
+
+      // Если на Lichess отключена опция ghost-фигуры при перетаскивании — восстанавливаем её на исходной selected-клетке
+      if (hasDragging && draggingEl) {
+        const dragType = getPieceType(draggingEl);
+        const selectedSq = queryVisibleElements(board, "square.selected")[0];
+        if (dragType && selectedSq) {
+          const sr = selectedSq.getBoundingClientRect();
+          const col = Math.floor((sr.left - bRect.left + sr.width / 2) / sqW);
+          const rankIndex = Math.floor((sr.top - bRect.top + sr.height / 2) / sqH);
+          if (col >= 0 && col <= 7 && rankIndex >= 0 && rankIndex <= 7) {
+            const file = isFlipped ? 7 - col : col;
+            const row = isFlipped ? rankIndex : 7 - rankIndex;
+            if (!grid[row][file]) grid[row][file] = dragType;
+          }
+        }
+      }
 
       const ranks = [];
       for (let r = 7; r >= 0; r--) {
@@ -936,7 +1040,9 @@ const Adapters = {
       }
       const activeTurn = this.detectTurn(board);
       const { rights, enPassant, fullMove } = this.getCastlingAndEnPassant(board, grid, activeTurn, fenRanks);
-      return `${fenRanks} ${activeTurn} ${rights} ${enPassant} 0 ${fullMove}`;
+      const posKey = `${fenRanks} ${activeTurn} ${rights} ${enPassant}`;
+      const halfMove = updateReversibleHistory(posKey, fullMove, hasDragging);
+      return `${posKey} ${halfMove} ${fullMove}`;
     }
   }
 };
@@ -1346,6 +1452,108 @@ class ChessSimulator {
   }
 }
 
+function tryFindSingleReversibleMove(prevFen, nextPosKey) {
+  if (!prevFen || !nextPosKey) return null;
+  const prevParts = prevFen.trim().split(/\s+/);
+  const nextParts = nextPosKey.trim().split(/\s+/);
+  if (prevParts.length < 4 || nextParts.length < 4) return null;
+  if (prevParts[1] === nextParts[1]) return null;
+  if (prevParts[2] !== nextParts[2]) return null;
+  if (nextParts[3] !== "-") return null;
+
+  const sim = new ChessSimulator(prevFen);
+  const targetSim = new ChessSimulator(`${nextPosKey} 0 1`);
+
+  let fromCoord = null;
+  let toCoord = null;
+  let movedPiece = null;
+
+  for (let r = 0; r < 8; r++) {
+    for (let f = 0; f < 8; f++) {
+      const a = sim.board[r][f];
+      const b = targetSim.board[r][f];
+      if (a === b) continue;
+      if (a && !b) {
+        if (fromCoord) return null;
+        fromCoord = { r, f };
+        movedPiece = a;
+      } else if (!a && b) {
+        if (toCoord) return null;
+        toCoord = { r, f };
+      } else {
+        return null;
+      }
+    }
+  }
+
+  if (!fromCoord || !toCoord || !movedPiece) return null;
+  if (movedPiece.toLowerCase() === "p") return null;
+  if (targetSim.board[toCoord.r][toCoord.f] !== movedPiece) return null;
+
+  const uci = ChessSimulator.coordToSq(fromCoord.r, fromCoord.f) + ChessSimulator.coordToSq(toCoord.r, toCoord.f);
+  if (!sim.makeMove(uci)) return null;
+
+  const afterKey = sim.toFEN().split(/\s+/).slice(0, 4).join(" ");
+  if (afterKey !== nextPosKey) return null;
+
+  return { uci, nextSimFen: sim.toFEN() };
+}
+
+function updateReversibleHistory(posKey, fullMove, isDraggingNow) {
+  if (!posKey) return 0;
+  if (posKey === reversibleHistory.lastPosKey) {
+    return reversibleHistory.moves.length;
+  }
+  if (isDraggingNow) {
+    return reversibleHistory.moves.length;
+  }
+  if (!reversibleHistory.currentFen) {
+    const initFen = `${posKey} 0 ${fullMove}`;
+    reversibleHistory = {
+      baseFen: initFen,
+      currentFen: initFen,
+      moves: [],
+      lastPosKey: posKey
+    };
+    return 0;
+  }
+
+  const step = tryFindSingleReversibleMove(reversibleHistory.currentFen, posKey);
+  if (step && reversibleHistory.moves.length < 120) {
+    reversibleHistory.moves.push(step.uci);
+    reversibleHistory.currentFen = step.nextSimFen;
+    reversibleHistory.lastPosKey = posKey;
+    return reversibleHistory.moves.length;
+  }
+
+  const resetFen = `${posKey} 0 ${fullMove}`;
+  reversibleHistory = {
+    baseFen: resetFen,
+    currentFen: resetFen,
+    moves: [],
+    lastPosKey: posKey
+  };
+  return 0;
+}
+
+function getPromoSuffix(uci, includeQueen = true) {
+  if (typeof uci !== "string" || uci.length < 5) return "";
+  const p = uci[4].toUpperCase();
+  if (!["Q", "R", "B", "N"].includes(p)) return "";
+  if (!includeQueen && p === "Q") return "";
+  return `=${p}`;
+}
+
+function formatMoveArrowText(uci) {
+  if (typeof uci !== "string" || uci.length < 4) return "";
+  return `${uci.slice(0, 2).toUpperCase()} ➔ ${uci.slice(2, 4).toUpperCase()}${getPromoSuffix(uci, true)}`;
+}
+
+function formatCompactMoveText(uci) {
+  if (typeof uci !== "string" || uci.length < 4) return "";
+  return `${uci.slice(0, 2).toUpperCase()}➔${uci.slice(2, 4).toUpperCase()}${getPromoSuffix(uci, true)}`;
+}
+
 function isPositionOutdated(fen, myColor, reqId) {
   if (reqId !== undefined && reqId !== currentRequestId) return true;
   if (!isAutoHintEnabled) return true;
@@ -1408,9 +1616,19 @@ function requestMovesFromBackground(fen, cfg = {}) {
       ? (amateurModeEnabled ? 5 : 1)
       : (arrowMode === "multi5" ? 5 : (arrowMode === "multi1" ? 1 : 3));
 
+    const useHistory = Boolean(
+      cfg.useGameHistory &&
+      reversibleHistory.moves.length > 0 &&
+      reversibleHistory.baseFen &&
+      typeof fen === "string" &&
+      fen.startsWith(reversibleHistory.lastPosKey + " ")
+    );
+
     const payload = {
       type: "ANALYZE_POSITION",
       fen,
+      uciBaseFen: useHistory ? reversibleHistory.baseFen : null,
+      uciMoves: useHistory ? reversibleHistory.moves.slice() : null,
       depth: cfg.depth || null,
       movetime: cfg.movetime || null,
       multiPV: cfg.multiPV || defaultPV
@@ -1681,8 +1899,10 @@ function drawArrow(ctx, start, end, color, dpr) {
   ctx.restore();
 }
 
-function drawBadge(ctx, end, score, color, dpr, badgePosition, extraY = 0, activeTurn = "w") {
-  const text = formatScore(normalizeScoreToWhite(score, activeTurn));
+function drawBadge(ctx, end, score, color, dpr, badgePosition, extraY = 0, activeTurn = "w", uciMove = "") {
+  const promoTag = getPromoSuffix(uciMove, false);
+  const scorePart = formatScore(normalizeScoreToWhite(score, activeTurn));
+  const text = [promoTag, scorePart].filter(Boolean).join(" ");
   if (!text) return;
 
   ctx.save();
@@ -1762,7 +1982,9 @@ function drawMulti5Badges(ctx, items, dpr, activeTurn = "w") {
 
   ctx.font = scoreFont;
   const badges = items.map((item) => {
-    const scoreStr = formatScore(normalizeScoreToWhite(item.score, activeTurn), "#M");
+    const promoTag = getPromoSuffix(item.move, false);
+    const rawScoreStr = formatScore(normalizeScoreToWhite(item.score, activeTurn), "#M");
+    const scoreStr = [promoTag, rawScoreStr].filter(Boolean).join(" ");
     const rankStr = String(item.rankIndex + 1);
     const scoreWidth = scoreStr ? ctx.measureText(scoreStr).width : 0;
     const w = scoreStr ? padLeft + circleDiam + gapAfterCircle + scoreWidth + padRight : badgeH;
@@ -1882,19 +2104,23 @@ function drawAllVisuals({ moves = [], premoveMove = null, activeTurn = "w", oppM
       drawSquareMarker(ctx, start, arrowColor, dpr);
       drawSquareMarker(ctx, end, arrowColor, dpr);
       drawArrow(ctx, start, end, arrowColor, dpr);
-      drawBadge(ctx, end, best.score, arrowColor, dpr, "top-center", 0, activeTurn);
+      drawBadge(ctx, end, best.score, arrowColor, dpr, "top-center", 0, activeTurn, best.move);
     } else if (hasPremove) {
       const pStart = getSquareBox(premoveMove.slice(0, 2), squareSize, dpr, isFlipped);
       const pEnd = getSquareBox(premoveMove.slice(2, 4), squareSize, dpr, isFlipped);
       drawSquareMarker(ctx, pStart, PREMOVE_COLOR, dpr);
       drawSquareMarker(ctx, pEnd, PREMOVE_COLOR, dpr);
       drawArrow(ctx, pStart, pEnd, PREMOVE_COLOR, dpr);
+      if (getPromoSuffix(premoveMove, false)) {
+        drawBadge(ctx, pEnd, null, PREMOVE_COLOR, dpr, "top-center", 0, activeTurn, premoveMove);
+      }
     }
     return;
   }
 
   if (arrowMode === "multi5" && validMoves.length > 0) {
     const items = validMoves.slice(0, 5).map((m, idx) => ({
+      move: m.move,
       start: getSquareBox(m.move.slice(0, 2), squareSize, dpr, isFlipped),
       end: getSquareBox(m.move.slice(2, 4), squareSize, dpr, isFlipped),
       score: m.score,
@@ -1916,6 +2142,9 @@ function drawAllVisuals({ moves = [], premoveMove = null, activeTurn = "w", oppM
       drawSquareMarker(ctx, pStart, PREMOVE_COLOR, dpr);
       drawSquareMarker(ctx, pEnd, PREMOVE_COLOR, dpr);
       drawArrow(ctx, pStart, pEnd, PREMOVE_COLOR, dpr);
+      if (getPromoSuffix(premoveMove, false)) {
+        drawBadge(ctx, pEnd, null, PREMOVE_COLOR, dpr, "top-center", 0, activeTurn, premoveMove);
+      }
     }
 
     drawMulti5Badges(ctx, items, dpr, activeTurn);
@@ -1932,7 +2161,7 @@ function drawAllVisuals({ moves = [], premoveMove = null, activeTurn = "w", oppM
     drawSquareMarker(ctx, start, arrowColor, dpr);
     drawSquareMarker(ctx, end, arrowColor, dpr);
     drawArrow(ctx, start, end, arrowColor, dpr);
-    drawBadge(ctx, end, best.score, arrowColor, dpr, "top-center", 0, activeTurn);
+    drawBadge(ctx, end, best.score, arrowColor, dpr, "top-center", 0, activeTurn, best.move);
 
     if (hasPremove) {
       const pStart = getSquareBox(premoveMove.slice(0, 2), squareSize, dpr, isFlipped);
@@ -1940,6 +2169,9 @@ function drawAllVisuals({ moves = [], premoveMove = null, activeTurn = "w", oppM
       drawSquareMarker(ctx, pStart, PREMOVE_COLOR, dpr);
       drawSquareMarker(ctx, pEnd, PREMOVE_COLOR, dpr);
       drawArrow(ctx, pStart, pEnd, PREMOVE_COLOR, dpr);
+      if (getPromoSuffix(premoveMove, false)) {
+        drawBadge(ctx, pEnd, null, PREMOVE_COLOR, dpr, "top-center", 0, activeTurn, premoveMove);
+      }
     }
     return;
   }
@@ -1965,6 +2197,7 @@ function drawAllVisuals({ moves = [], premoveMove = null, activeTurn = "w", oppM
     }
 
     const items = top3.map((m, idx) => ({
+      move: m.move,
       start: getSquareBox(m.move.slice(0, 2), squareSize, dpr, isFlipped),
       end: getSquareBox(m.move.slice(2, 4), squareSize, dpr, isFlipped),
       color: MULTI3_COLORS[idx] || "#ffffff",
@@ -1981,7 +2214,7 @@ function drawAllVisuals({ moves = [], premoveMove = null, activeTurn = "w", oppM
       drawArrow(ctx, items[i].start, items[i].end, items[i].color, dpr);
     }
     for (let i = items.length - 1; i >= 0; i--) {
-      drawBadge(ctx, items[i].end, items[i].score, items[i].color, dpr, items[i].badgePos, items[i].extraY, activeTurn);
+      drawBadge(ctx, items[i].end, items[i].score, items[i].color, dpr, items[i].badgePos, items[i].extraY, activeTurn, items[i].move);
     }
   }
 
@@ -1991,6 +2224,9 @@ function drawAllVisuals({ moves = [], premoveMove = null, activeTurn = "w", oppM
     drawSquareMarker(ctx, pStart, PREMOVE_COLOR, dpr);
     drawSquareMarker(ctx, pEnd, PREMOVE_COLOR, dpr);
     drawArrow(ctx, pStart, pEnd, PREMOVE_COLOR, dpr);
+    if (getPromoSuffix(premoveMove, false)) {
+      drawBadge(ctx, pEnd, null, PREMOVE_COLOR, dpr, "top-center", 0, activeTurn, premoveMove);
+    }
   }
 }
 
@@ -2072,16 +2308,18 @@ function onDragStart(clientX, clientY, target) {
   }
 
   const isHeader = target && target.closest && target.closest(".widget-header, .settings-panel-header, .widget-drag-handle, .widget-corner-grip");
+  const isProtectedContent = target && target.closest && target.closest(
+    "#chess-assistant-output, .chess-watermark, .platform-switch-row, .speed-modes-grid, .chess-controls-group, .widget-settings-panel"
+  );
   const rect = widget.getBoundingClientRect();
-  const isTopZone = (clientY - rect.top < 42) &&
-                    !(target && target.closest && target.closest("#chess-assistant-output, .chess-watermark, .platform-switch-row, .speed-modes-grid, .chess-controls-group"));
+  const isTopZone = (clientY - rect.top < 42) && !isProtectedContent;
 
-  const cornerSize = 44;
+  const cornerSize = 24;
   const isTopLeft = (clientX - rect.left <= cornerSize) && (clientY - rect.top <= cornerSize);
   const isTopRight = (rect.right - clientX <= cornerSize) && (clientY - rect.top <= cornerSize);
   const isBottomLeft = (clientX - rect.left <= cornerSize) && (rect.bottom - clientY <= cornerSize);
   const isBottomRight = (rect.right - clientX <= cornerSize) && (rect.bottom - clientY <= cornerSize);
-  const isCorner = isTopLeft || isTopRight || isBottomLeft || isBottomRight;
+  const isCorner = (isTopLeft || isTopRight || isBottomLeft || isBottomRight) && !isProtectedContent;
 
   if (isHeader || isTopZone || isCorner) {
     clearTimeout(dragResetTimer);
@@ -2228,8 +2466,25 @@ async function requestBestMoves() {
     lastRenderedState = null;
     if (output) output.innerText = t("oppTurnPremove");
 
-    // 1. Запрашиваем MultiPV 5 для текущей позиции соперника
-    const oppRes = await requestMovesFromBackground(fen, { movetime: 1800, depth: 14, multiPV: 5 });
+    // 1. Адаптивное время расчёта премува под выбранный режим скорости (чтобы в Пуле успевать до хода соперника)
+    const premoveSearchProfile = IS_MOBILE_BUILD
+      ? (speedMode === "bullet"
+          ? { movetime: 130, depth: 8, multiPV: 3, branchTime: 35, branchDepth: 6 }
+          : (speedMode === "blitz"
+              ? { movetime: 240, depth: 9, multiPV: 4, branchTime: 45, branchDepth: 6 }
+              : { movetime: 400, depth: 10, multiPV: 4, branchTime: 60, branchDepth: 7 }))
+      : (speedMode === "bullet"
+          ? { movetime: 240, depth: 10, multiPV: 4, branchTime: 45, branchDepth: 7 }
+          : (speedMode === "blitz"
+              ? { movetime: 550, depth: 12, multiPV: 5, branchTime: 70, branchDepth: 8 }
+              : { movetime: 1200, depth: 14, multiPV: 5, branchTime: 90, branchDepth: 8 }));
+
+    const oppRes = await requestMovesFromBackground(fen, {
+      movetime: premoveSearchProfile.movetime,
+      depth: premoveSearchProfile.depth,
+      multiPV: premoveSearchProfile.multiPV,
+      useGameHistory: true
+    });
 
     if (reqId !== currentRequestId || !isAutoHintEnabled || !isPremovesEnabled || !isOnlyMyTurnEnabled) return;
     if (!oppRes || oppRes.cancelled) {
@@ -2268,14 +2523,16 @@ async function requestBestMoves() {
       : (bestOppScore.value || 0);
     const E_current = -oppCp;
 
-    // Если текущая позиция уже в минусе (< 0.0), безопасный премув невозможен
-    if (E_current < 0) {
+    // Учитываем естественный дебютный перевес белых (~+0.3), чтобы премувы работали и при игре чёрными в равной позиции
+    const MIN_SAFE_PREMOVE_EVAL_CP = -85;
+    const MAX_PREMOVE_DROP_CP = 35;
+    if (E_current < MIN_SAFE_PREMOVE_EVAL_CP) {
       if (output) output.innerText = t("oppTurnWait");
       return;
     }
 
-    // 2. Двухэтапная проверка каждого из топ-5 ходов соперника
-    const branchesToCheck = oppMoves.slice(0, 5);
+    // 2. Двухэтапная проверка топ-ответов соперника
+    const branchesToCheck = oppMoves.slice(0, premoveSearchProfile.multiPV);
     let worstAfterPremove = E_current;
     let isPremoveSafe = true;
     let checkedBranches = 0;
@@ -2326,7 +2583,11 @@ async function requestBestMoves() {
         E_branch = -bCp;
       } else {
         const branchFEN = sim.toFEN();
-        const branchRes = await requestMovesFromBackground(branchFEN, { movetime: 100, depth: 8, multiPV: 1 });
+        const branchRes = await requestMovesFromBackground(branchFEN, {
+          movetime: premoveSearchProfile.branchTime,
+          depth: premoveSearchProfile.branchDepth,
+          multiPV: 1
+        });
         if (reqId !== currentRequestId || !isAutoHintEnabled || !isPremovesEnabled || !isOnlyMyTurnEnabled) return;
         if (isPositionOutdated(fen, myColor, reqId)) {
           if (reqId === currentRequestId && isAutoHintEnabled) {
@@ -2352,7 +2613,7 @@ async function requestBestMoves() {
         }
       }
 
-      if (E_branch < 0 || E_current - E_branch > 30) {
+      if (E_branch < MIN_SAFE_PREMOVE_EVAL_CP - 15 || E_current - E_branch > MAX_PREMOVE_DROP_CP) {
         isPremoveSafe = false;
         break;
       }
@@ -2365,7 +2626,12 @@ async function requestBestMoves() {
 
     if (reqId !== currentRequestId || !isAutoHintEnabled || !isPremovesEnabled || !isOnlyMyTurnEnabled) return;
 
-    if (!isPremoveSafe || checkedBranches === 0 || worstAfterPremove < 0 || (E_current - worstAfterPremove > 30)) {
+    if (
+      !isPremoveSafe ||
+      checkedBranches === 0 ||
+      worstAfterPremove < MIN_SAFE_PREMOVE_EVAL_CP - 15 ||
+      (E_current - worstAfterPremove > MAX_PREMOVE_DROP_CP)
+    ) {
       clearOverlay();
       lastRenderedState = null;
       if (output) output.innerText = t("oppTurnWait");
@@ -2378,8 +2644,8 @@ async function requestBestMoves() {
     if (output) {
       const pm = candidatePremove;
       const opp = oppMoves[0].move;
-      const oppNote = opp ? ` (${t("premoveOnOpp")} ${opp.slice(0, 2).toUpperCase()}➔${opp.slice(2, 4).toUpperCase()})` : "";
-      output.innerText = `${t("premoveLabel")} ${pm.slice(0, 2).toUpperCase()} ➔ ${pm.slice(2, 4).toUpperCase()}${oppNote}`;
+      const oppNote = opp ? ` (${t("premoveOnOpp")} ${formatCompactMoveText(opp)})` : "";
+      output.innerText = `${t("premoveLabel")} ${formatMoveArrowText(pm)}${oppNote}`;
     }
     return;
   }
@@ -2387,9 +2653,12 @@ async function requestBestMoves() {
   let cfg = SPEED_MODES[speedMode] || (IS_MOBILE_BUILD ? SPEED_MODES.rapid : SPEED_MODES.bullet);
   const turnName = activeTurn === "w" ? t("whiteGen") : t("blackGen");
   const curLegitConfig = AMATEUR_CONFIGS[amateurMode] || AMATEUR_CONFIGS.legit1;
+  const baseLegitDelay = parseInt(legitDelay, 10) || 1000;
 
   if (amateurModeEnabled) {
-    const legitMovetime = IS_MOBILE_BUILD ? (amateurMode === "legit2" ? 450 : 800) : 3500;
+    const legitMovetime = IS_MOBILE_BUILD
+      ? Math.min(amateurMode === "legit2" ? 450 : 800, Math.max(80, baseLegitDelay))
+      : Math.min(3500, Math.max(160, Math.round(baseLegitDelay * 0.85)));
     cfg = { ...cfg, depth: curLegitConfig.depth, movetime: legitMovetime };
     if (output) {
       output.innerText = `${t(curLegitConfig.nameKey)} — ${t("searchingTurn")} (${turnName})...`;
@@ -2406,19 +2675,25 @@ async function requestBestMoves() {
     ? (amateurModeEnabled ? 5 : 1)
     : (amateurModeEnabled ? 5 : (arrowMode === "multi5" ? 5 : (arrowMode === "multi3" ? 3 : 1)));
 
+  const searchStartedAt = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
   const res = await requestMovesFromBackground(fen, {
     ...cfg,
-    multiPV: targetMultiPV
+    multiPV: targetMultiPV,
+    useGameHistory: true
   });
 
   if (reqId !== currentRequestId || !isAutoHintEnabled) return;
 
-  // Легит-режим: естественная пауза перед показом стрелки
+  // Легит-режим: естественная пауза с вычитанием времени, уже потраченного движком на расчёт
   if (amateurModeEnabled && !isOpponentTurn && res && !res.cancelled && res.moves && res.moves.length > 0) {
-    const baseDelay = parseInt(legitDelay, 10) || 1000;
-    const jitter = (Math.random() * 0.24 - 0.12) * baseDelay;
-    const delay = Math.max(15, Math.round(baseDelay + jitter));
-    await new Promise((r) => setTimeout(r, delay));
+    const nowTs = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+    const elapsedMs = Math.max(0, nowTs - searchStartedAt);
+    const jitter = (Math.random() * 0.24 - 0.12) * baseLegitDelay;
+    const targetTotalDelay = Math.max(15, Math.round(baseLegitDelay + jitter));
+    const remainingDelay = Math.max(0, Math.round(targetTotalDelay - elapsedMs));
+    if (remainingDelay > 0) {
+      await new Promise((r) => setTimeout(r, remainingDelay));
+    }
 
     if (reqId !== currentRequestId || !isAutoHintEnabled) {
       if (!isAutoHintEnabled) clearOverlay();
@@ -2461,26 +2736,26 @@ function formatMovesLog(moves, activeTurn, isFlipped) {
   if (IS_MOBILE_BUILD) {
     const m = moves[0];
     const scorePart = formatScorePart(m.score, "M");
-    return `${t("bestMovePhone")} ${m.move.slice(0, 2).toUpperCase()} ➔ ${m.move.slice(2, 4).toUpperCase()}${scorePart}`;
+    return `${t("bestMovePhone")} ${formatMoveArrowText(m.move)}${scorePart}`;
   }
 
   if (arrowMode === "multi1") {
     const m = moves[0];
     const scorePart = formatScorePart(m.score, "M");
-    return `#1: ${m.move.slice(0, 2).toUpperCase()} ➔ ${m.move.slice(2, 4).toUpperCase()}${scorePart}`;
+    return `#1: ${formatMoveArrowText(m.move)}${scorePart}`;
   }
 
   if (arrowMode === "multi5") {
     return moves.slice(0, 5).map((m, i) => {
       const scorePart = formatScorePart(m.score, "#M");
-      return `#${i + 1}: ${m.move.slice(0, 2).toUpperCase()} ➔ ${m.move.slice(2, 4).toUpperCase()}${scorePart}`;
+      return `#${i + 1}: ${formatMoveArrowText(m.move)}${scorePart}`;
     }).join("\n");
   }
 
   const labels = [t("label1st"), t("label2nd"), t("label3rd")];
   return moves.slice(0, 3).map((m, i) => {
     const scorePart = formatScorePart(m.score, "M");
-    return `${labels[i]}: ${m.move.slice(0, 2).toUpperCase()} ➔ ${m.move.slice(2, 4).toUpperCase()}${scorePart}`;
+    return `${labels[i]}: ${formatMoveArrowText(m.move)}${scorePart}`;
   }).join("\n");
 }
 
@@ -2684,6 +2959,9 @@ function setLanguage(lang) {
       const panel = document.getElementById("chess-settings-panel");
       if (panel) panel.style.display = "block";
     }
+    requestAnimationFrame(() => {
+      clampWidgetPosition();
+    });
 
     if (lastEvalState && lastEvalState.score) {
       updateEvalBar(lastEvalState.score, lastEvalState.activeTurn);
@@ -2704,14 +2982,14 @@ function setLanguage(lang) {
           }
           if (isOppTurn && isPremovesEnabled && lastRenderedState.premoveMove) {
             const pm = lastRenderedState.premoveMove;
-            text += `\n${t("premoveLabel")} ${pm.slice(0, 2).toUpperCase()} ➔ ${pm.slice(2, 4).toUpperCase()}`;
+            text += `\n${t("premoveLabel")} ${formatMoveArrowText(pm)}`;
           }
           newOut.innerText = text;
         } else if (lastRenderedState.premoveMove) {
           const pm = lastRenderedState.premoveMove;
           const opp = lastRenderedState.oppMove;
-          const oppNote = opp ? ` (${t("premoveOnOpp")} ${opp.slice(0, 2).toUpperCase()}➔${opp.slice(2, 4).toUpperCase()})` : "";
-          newOut.innerText = `${t("premoveLabel")} ${pm.slice(0, 2).toUpperCase()} ➔ ${pm.slice(2, 4).toUpperCase()}${oppNote}`;
+          const oppNote = opp ? ` (${t("premoveOnOpp")} ${formatCompactMoveText(opp)})` : "";
+          newOut.innerText = `${t("premoveLabel")} ${formatMoveArrowText(pm)}${oppNote}`;
         }
       }
     } else if (newOut) {
@@ -2925,11 +3203,11 @@ function createWidget() {
           <div><a href="https://bygemini.chess-assistants.workers.dev/" target="_blank" rel="noopener noreferrer">bygemini.chess-assistants.workers.dev</a></div>
         </div>
       </div>
-
-      <!-- Угловые зоны для удобного перетаскивания открытого меню -->
-      <div class="widget-corner-grip bl" title="${t("cornerGripTip")}"></div>
-      <div class="widget-corner-grip br" title="${t("cornerGripTip")}"></div>
     </div>
+
+    <!-- Угловые зоны для удобного перетаскивания открытого меню (вне прокручиваемого тела) -->
+    <div class="widget-corner-grip bl" title="${t("cornerGripTip")}"></div>
+    <div class="widget-corner-grip br" title="${t("cornerGripTip")}"></div>
   `;
 
   const savedR = safeGetStorage("chess_widget_pos_r");
@@ -3198,6 +3476,7 @@ function createWidget() {
 
   function toggleHints() {
     isAutoHintEnabled = !isAutoHintEnabled;
+    safeSetStorage("chess_auto_hints_enabled", isAutoHintEnabled ? "true" : "false");
     updateToggleHintsUI();
     const out = document.getElementById("chess-assistant-output");
     ++currentRequestId;
@@ -3225,6 +3504,7 @@ function createWidget() {
   if (autoToggle) {
     autoToggle.addEventListener("change", (e) => {
       isAutoHintEnabled = e.target.checked;
+      safeSetStorage("chess_auto_hints_enabled", isAutoHintEnabled ? "true" : "false");
       updateToggleHintsUI();
       ++currentRequestId;
       clearTimeout(followUpCheckTimer);
@@ -3245,6 +3525,7 @@ function createWidget() {
   if (myTurnToggle) {
     myTurnToggle.addEventListener("change", (e) => {
       isOnlyMyTurnEnabled = e.target.checked;
+      safeSetStorage("chess_only_my_turn", isOnlyMyTurnEnabled ? "true" : "false");
       ++currentRequestId;
       clearTimeout(followUpCheckTimer);
       clearOverlay();

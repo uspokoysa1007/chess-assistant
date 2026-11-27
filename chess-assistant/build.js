@@ -1,11 +1,11 @@
 /**
- * Скрипт сборки расширения Chess Assistant (PC версия v2.4)
+ * Скрипт сборки расширения Chess Assistant (PC версия v2.5)
  * Собирает проект в dist/, упаковывает в chess-assistant.xpi и очищает временную папку dist/
  */
 
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
+const { packDirectoryToXpi } = require('../scripts/pack-xpi');
 
 global.self = global;
 
@@ -13,7 +13,7 @@ const ROOT_DIR = __dirname;
 const DIST_DIR = path.join(ROOT_DIR, 'dist');
 const XPI_PATH = path.join(ROOT_DIR, 'chess-assistant.xpi');
 
-console.log('🚀 [Build PC] Начало сборки Chess Assistant v2.4 (PC)...');
+console.log('🚀 [Build PC] Начало сборки Chess Assistant v2.5 (PC)...');
 
 // 1. Очистка и создание структуры dist/
 if (fs.existsSync(DIST_DIR)) {
@@ -43,7 +43,7 @@ console.log('📄 [Build PC] Обработка manifest.json...');
 const manifestRaw = fs.readFileSync(path.join(ROOT_DIR, 'manifest.json'), 'utf8');
 const manifest = JSON.parse(manifestRaw);
 
-manifest.version = manifest.version || '2.4';
+manifest.version = manifest.version || '2.5';
 manifest.icons = {
   '48': 'icons/pawn.svg',
   '96': 'icons/pawn.svg'
@@ -152,26 +152,7 @@ for (const file of stockfishFiles) {
 
 // 6. Упаковка dist/ в chess-assistant.xpi
 console.log('📦 [Build PC] Упаковка в chess-assistant.xpi...');
-if (fs.existsSync(XPI_PATH)) {
-  fs.unlinkSync(XPI_PATH);
-}
-
-const psScript = `
-  Add-Type -AssemblyName System.IO.Compression;
-  Add-Type -AssemblyName System.IO.Compression.FileSystem;
-  $dist = '${DIST_DIR.replace(/\\/g, '/')}';
-  $xpi = '${XPI_PATH.replace(/\\/g, '/')}';
-  $archive = [System.IO.Compression.ZipFile]::Open($xpi, [System.IO.Compression.ZipArchiveMode]::Create);
-  $files = Get-ChildItem -Path $dist -Recurse -File;
-  foreach ($f in $files) {
-    $rel = $f.FullName.Substring($dist.Length + 1);
-    $rel = $rel.Replace([char]92, [char]47);
-    [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, $f.FullName, $rel, [System.IO.Compression.CompressionLevel]::Optimal);
-  };
-  $archive.Dispose();
-`;
-
-execSync(`powershell -NoProfile -Command "${psScript.replace(/[\r\n]+/g, ' ')}"`, { stdio: 'inherit' });
+packDirectoryToXpi(DIST_DIR, XPI_PATH);
 const sizeMb = (fs.statSync(XPI_PATH).size / 1024 / 1024).toFixed(1);
 
 // 7. Удаление временной папки dist/ (чтобы не хранить дубликат ~95 МБ)
